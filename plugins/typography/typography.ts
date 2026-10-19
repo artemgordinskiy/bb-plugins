@@ -31,8 +31,11 @@ export interface ProseStyle {
 export interface ChatConfig {
   enabled: boolean;
   replies: ProseStyle & { font: FontChoice };
-  /** Your own messages; "same" follows the replies font. */
-  messages: ProseStyle & { font: DerivedFontChoice };
+  /**
+   * Your own messages; "same" follows the replies font. `composer` sets the
+   * message box in the same type, so a draft reads as it will once sent.
+   */
+  messages: ProseStyle & { font: DerivedFontChoice; composer: boolean };
   headings: {
     /** "same" follows the body font of each message. */
     font: DerivedFontChoice;
@@ -63,7 +66,7 @@ export interface ChatConfig {
 
 export interface TypographyConfig {
   enabled: boolean;
-  /** bb's own UI: sidebar, menus, settings, composer. */
+  /** bb's own UI: sidebar, menus, settings, and the message box unless chat sets it. */
   interface: {
     font: FontChoice;
     /** px for bb's base (`--text-sm`) size; null keeps the theme's scale. */
@@ -100,7 +103,8 @@ const THEME_COLOR: ColorChoice = { light: null, dark: null };
  * plugin does not rearrange bb. Code everywhere moves to JetBrains Mono (the
  * terminal keeps bb's Nerd Font stack). Chat gets a book-like reading setup:
  * Literata at 17px with a 1.65 line height (about 28px), your messages one
- * pixel smaller, a slightly lighter weight in dark mode, code a notch
+ * pixel smaller and the message box set to match them, a slightly lighter
+ * weight in dark mode, code a notch
  * smaller than the text around it, and paragraph gaps sized for the larger
  * text.
  */
@@ -125,6 +129,7 @@ export const DEFAULT_CONFIG: TypographyConfig = {
       weight: 400,
       letterSpacing: 0,
       color: THEME_COLOR,
+      composer: true,
     },
     headings: {
       font: { kind: "same" },
@@ -318,7 +323,11 @@ function parseChat(value: unknown): ChatConfig {
   return {
     enabled: bool(input.enabled, d.enabled),
     replies: { ...parseProse(replies, d.replies), font: parseFont(replies.font, d.replies.font) },
-    messages: { ...parseProse(messages, d.messages), font: parseDerivedFont(messages.font, d.messages.font) },
+    messages: {
+      ...parseProse(messages, d.messages),
+      font: parseDerivedFont(messages.font, d.messages.font),
+      composer: bool(messages.composer, d.messages.composer),
+    },
     headings: {
       font: parseDerivedFont(headings.font, d.headings.font),
       weight: clamp(headings.weight, LIMITS.headingWeight, d.headings.weight),
@@ -418,13 +427,16 @@ export function themeBaseSize(theme: ThemeTokens): number {
  * bb renders every chat message's markdown in `[data-markdown-preview]`
  * inside a `[data-message-column]`; the assistant's column carries the
  * `group/message` class and the user's bubble column does not. The settings
- * preview marks its samples with `data-typography-sample`.
+ * preview marks its samples with `data-typography-sample`. The message box
+ * is a ProseMirror editor inside `[data-promptbox-editor-content]`, on the
+ * new-thread page and under every thread.
  */
 export const SCOPES = {
   replies:
     ':is([data-message-column].group\\/message, [data-typography-sample="replies"]) [data-markdown-preview]',
   messages:
     ':is([data-message-column]:not(.group\\/message), [data-typography-sample="messages"]) [data-markdown-preview]',
+  composer: ':is([data-promptbox-editor-content] .ProseMirror, [data-typography-sample="composer"])',
 } as const;
 
 /** The font-family value for a choice, or null to keep the theme's. */
@@ -510,11 +522,14 @@ function rootRules(config: TypographyConfig, theme: ThemeTokens): string[] {
   ];
 }
 
+function darkWeight(style: ProseStyle, rhythm: ChatConfig["rhythm"]): string {
+  return String(Math.min(900, Math.max(100, style.weight + rhythm.darkWeightOffset)));
+}
+
 function proseRules(scope: string, style: ProseStyle, font: FontChoice, config: TypographyConfig): string[] {
   const { rhythm, headings, code } = config.chat;
   const headingFont = resolveFont(headings.font, font);
   const codeFont = resolveFont(code.font, config.code.font);
-  const darkWeight = Math.min(900, Math.max(100, style.weight + rhythm.darkWeightOffset));
   const h = (base: number) => `${num(base * headings.scale)}em`;
   return [
     rule(scope, {
@@ -535,7 +550,7 @@ function proseRules(scope: string, style: ProseStyle, font: FontChoice, config: 
       hyphens: rhythm.hyphens ? "auto" : "manual",
       "text-rendering": "optimizeLegibility",
     }),
-    rule(`html.dark ${scope}`, { "font-weight": String(darkWeight) }),
+    rule(`html.dark ${scope}`, { "font-weight": darkWeight(style, rhythm) }),
     ...colorRules(scope, style.color),
     rule(`${scope} :is(p, ul, ol, blockquote, table):not(:last-child)`, {
       "margin-bottom": "var(--typography-gap)",
@@ -567,6 +582,24 @@ function proseRules(scope: string, style: ProseStyle, font: FontChoice, config: 
   ];
 }
 
+/**
+ * The message box in your messages' type. Colors and paragraph rhythm stay
+ * bb's, and wrapping stays plain so earlier lines do not reflow while typing.
+ */
+function composerRules(style: ProseStyle, font: FontChoice, rhythm: ChatConfig["rhythm"]): string[] {
+  return [
+    rule(SCOPES.composer, {
+      "font-family": fontStack(font, "var(--font-sans)"),
+      "font-size": `${num(style.size)}px`,
+      "line-height": num(style.lineHeight),
+      "font-weight": String(style.weight),
+      "letter-spacing": `${num(style.letterSpacing)}em`,
+      "font-optical-sizing": rhythm.opticalSizing ? "auto" : "none",
+    }),
+    rule(`html.dark ${SCOPES.composer}`, { "font-weight": darkWeight(style, rhythm) }),
+  ];
+}
+
 /** The stylesheet for a config; empty when the plugin is switched off. */
 export function buildStylesheet(config: TypographyConfig, theme: ThemeTokens = BB_THEME): string {
   if (!config.enabled) return "";
@@ -578,6 +611,7 @@ export function buildStylesheet(config: TypographyConfig, theme: ThemeTokens = B
       ? [
           ...proseRules(SCOPES.replies, chat.replies, chat.replies.font, config),
           ...proseRules(SCOPES.messages, chat.messages, messagesFont, config),
+          ...(chat.messages.composer ? composerRules(chat.messages, messagesFont, chat.rhythm) : []),
         ]
       : []),
   ]

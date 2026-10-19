@@ -7,7 +7,9 @@ description: Explain or troubleshoot the Typography plugin, which sets bb's chat
 
 Sets fonts and sizes in three areas:
 
-- **Chat**: the markdown text of assistant replies and the user's own messages.
+- **Chat**: the markdown text of assistant replies and the user's own
+  messages, and by default the message box (composer), which takes the
+  user's message type.
 - **Interface**: bb's UI font and base text size.
 - **Code**: the monospace font for code blocks, file views, diffs and the
   terminal.
@@ -22,7 +24,8 @@ them to the settings page.
 
 - **Chat** has its own on/off switch, presets (Book is the default: Literata
   17px, line height 1.65; also Editorial, Hyperlegible, Interface font), and
-  tabs for Replies, Your messages, Headings, Code and Spacing.
+  tabs for Replies, Your messages, Headings, Code and Spacing. The **Message
+  box** switch under Your messages returns the composer to the interface font.
 - **Interface** has a font and a base size (11–17px). The base size scales
   all of bb's `--text-*` tokens; spacing is unchanged.
 - **Code** has a code font (default JetBrains Mono), a terminal font (default:

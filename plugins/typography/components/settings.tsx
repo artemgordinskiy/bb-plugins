@@ -260,6 +260,12 @@ function ChatSection({
                   surfaceVar="--surface-recessed"
                   onChange={(style) => update({ messages: { ...chat.messages, ...style } })}
                 />
+                <SwitchField
+                  label="Message box"
+                  description="Write in this type too, so a draft reads as it will once sent. Off keeps the interface font."
+                  checked={chat.messages.composer}
+                  onChange={(composer) => update({ messages: { ...chat.messages, composer } })}
+                />
               </TabsContent>
 
               <TabsContent value="headings" className="space-y-5">
@@ -407,7 +413,7 @@ function InterfaceSection({
     <div className="space-y-6">
       <SectionHeader
         title="Interface"
-        description="The sidebar, menus, settings and composer. The theme's own face and scale until you change them."
+        description="The sidebar, menus and settings. The theme's own face and scale until you change them."
         onReset={same(ui, DEFAULT_CONFIG.interface) ? null : () => onChange(DEFAULT_CONFIG.interface)}
       />
       <Split

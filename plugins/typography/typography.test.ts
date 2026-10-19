@@ -118,6 +118,16 @@ test("the default chat stylesheet styles replies and your messages", () => {
   assert.ok(!css.includes("--foreground"));
 });
 
+test("the message box takes your messages' type unless switched off", () => {
+  const lines = buildStylesheet(DEFAULT_CONFIG).split("\n");
+  const box = lines.find((line) => line.startsWith(`${SCOPES.composer}{`)) ?? "";
+  assert.match(box, /font-family:"Literata", Georgia/);
+  assert.match(box, /font-size:16px;line-height:1\.6;font-weight:400/);
+  assert.ok(lines.includes(`html.dark ${SCOPES.composer}{font-weight:380}`));
+  const off = buildStylesheet(withChat({ messages: { ...DEFAULT_CONFIG.chat.messages, composer: false } }));
+  assert.ok(!off.includes("promptbox"));
+});
+
 test("colors apply per appearance", () => {
   const css = buildStylesheet(
     withChat({ replies: { ...DEFAULT_CONFIG.chat.replies, color: { light: "#2b2b2b", dark: null } } }),

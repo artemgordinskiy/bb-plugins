@@ -61,6 +61,12 @@ export function ChatPreview({ enabled }: { enabled: boolean }) {
         <div data-typography-sample="replies" className="px-2">
           <Markdown content={REPLY_SAMPLE} />
         </div>
+        <div className="rounded-xl border border-border bg-background px-4 pb-3 pt-3 shadow-xs">
+          <div data-typography-sample="composer" className="text-sm leading-[1.7] text-foreground">
+            Could the message box match too?
+          </div>
+          <div className="mt-2 text-xs text-muted-foreground">Message box</div>
+        </div>
       </div>
     </Frame>
   );

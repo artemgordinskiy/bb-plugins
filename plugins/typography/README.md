@@ -3,16 +3,16 @@
 Fonts and sizes for bb, in three areas:
 
 - **Chat** — book-like reading typography for assistant replies and your own
-  messages.
-- **Interface** — the font and base size of bb's own UI: sidebar, menus,
-  settings, composer.
+  messages. The message box uses your messages' type by default.
+- **Interface** — the font and base size of bb's own UI: sidebar, menus and
+  settings.
 - **Code** — one monospace font for code blocks, file views, diffs and the
   terminal.
 
 Defaults change only what helps reading. The interface keeps the theme's face
 and scale. Code everywhere moves to JetBrains Mono with ligatures off, and the
 terminal keeps bb's Nerd Font stack. Chat is set in Literata at 17px with a
-1.65 line height, with your messages at 16px. Code in chat is 84% of the
+1.65 line height, with your messages and the message box at 16px. Code in chat is 84% of the
 surrounding text. Dark mode uses a slightly lighter weight, and paragraph
 gaps are wider. Colors follow the theme until you pick your own.
 
@@ -33,7 +33,7 @@ The chat tabs hold these controls:
 | Chat tab | Controls |
 | --- | --- |
 | Replies | font, size, line height, weight, letter spacing, light and dark text color |
-| Your messages | the same, with the font defaulting to "same as replies" |
+| Your messages | the same, with the font defaulting to "same as replies"; whether the message box uses this type (on by default) |
 | Headings | font, weight, size scale, letter spacing, color |
 | Code | font ("same as code font" by default), size relative to text, block line height |
 | Spacing | paragraph spacing, dark mode weight offset, even line endings, hyphenation, optical sizing |
@@ -102,6 +102,10 @@ bundled fonts, and rules generated from the saved config
     and small labels scale with the text.
   - Chat code fonts and sizes are `!important` so another plugin's global
     code rule does not override them.
+  - The message box is the ProseMirror editor inside
+    `[data-promptbox-editor-content]`. It takes your messages' font, size,
+    line height, weight and letter spacing, but not their color, paragraph
+    spacing or wrapping, so earlier lines do not reflow while you type.
 
 These selectors and tokens match bb 0.46. If a bb update changes them, the
 affected rules stop matching and bb's own styling shows; nothing breaks.
