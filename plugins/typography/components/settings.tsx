@@ -476,7 +476,12 @@ function CodeSection({
             />
             <SwitchField
               label="Ligatures"
-              description="Join sequences like => and != into single glyphs, where the font has them."
+              description={
+                <>
+                  Join sequences like <code className="font-mono">=&gt;</code> and{" "}
+                  <code className="font-mono">!=</code> into single glyphs, where the font has them.
+                </>
+              }
               checked={code.ligatures}
               onChange={(ligatures) => onChange({ ...code, ligatures })}
             />

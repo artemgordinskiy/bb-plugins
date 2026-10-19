@@ -99,7 +99,7 @@ export function SwitchField({
   onChange,
 }: {
   label: string;
-  description?: string;
+  description?: ReactNode;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {

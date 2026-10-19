@@ -1,7 +1,7 @@
 // Font menu: "same as …" and theme options, the bundled fonts, and fonts on
 // this device. Each option is drawn in its own face so choosing is a matter
 // of looking.
-import { useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { deviceFontAccess, isFontInstalled, listDeviceFonts } from "../device-fonts";
 import { BUNDLED_FONTS, type FontCategory } from "../fonts";
 import { loadDeviceFonts, saveDeviceFonts } from "../store";
+import { FieldRow } from "./fields";
 import { fontLabel, fontStack, sanitizeFamily, type DerivedFontChoice, type FontChoice } from "../typography";
 
 const DEVICE_RESULT_LIMIT = 150;
@@ -86,6 +87,7 @@ export function FontPicker({
   theme: AliasOption | null;
   onChange: (value: DerivedFontChoice) => void;
 }) {
+  const id = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [deviceFonts, setDeviceFonts] = useState(loadDeviceFonts);
@@ -136,121 +138,123 @@ export function FontPicker({
         : fontStack(value, generic);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          className="flex h-10 w-full cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-left shadow-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <span className="min-w-0 flex-1 truncate text-[15px] text-foreground" style={{ fontFamily: triggerFamily ?? undefined }}>
-            {fontLabel(value, { same: same?.label, theme: theme?.label })}
-          </span>
-          <Icon name="ChevronDown" className="size-3.5 shrink-0 text-muted-foreground" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))] p-0" mobileTitle={label}>
-        <div className="border-b border-border p-2">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={access === "available" ? "Search fonts" : "Search, or type an installed font"}
-            aria-label="Search fonts"
-            className="h-8"
-          />
-        </div>
-        <div role="listbox" aria-label={label} className="max-h-80 overflow-y-auto p-1">
-          {needle === "" ? (
-            <>
-              {same ? (
-                <Option
-                  selected={value.kind === "same"}
-                  onSelect={() => choose({ kind: "same" })}
-                  family={same.family}
-                  title={same.label}
-                  detail={same.detail}
-                />
-              ) : null}
-              {theme ? (
-                <Option
-                  selected={value.kind === "theme"}
-                  onSelect={() => choose({ kind: "theme" })}
-                  family={theme.family}
-                  title={theme.label}
-                  detail={theme.detail}
-                />
-              ) : null}
-            </>
-          ) : null}
-
-          {bundled.length > 0 ? <GroupLabel>Included</GroupLabel> : null}
-          {bundled.map((font) => {
-            const choice: FontChoice = { kind: "bundled", id: font.id };
-            return (
-              <Option
-                key={font.id}
-                selected={sameChoice(value, choice)}
-                onSelect={() => choose(choice)}
-                family={fontStack(choice, generic)}
-                title={font.label}
-                detail={font.note}
-              />
-            );
-          })}
-
-          <GroupLabel>On this device</GroupLabel>
-          {device.slice(0, DEVICE_RESULT_LIMIT).map((family) => {
-            const choice: FontChoice = { kind: "device", family };
-            return (
-              <Option
-                key={family}
-                selected={sameChoice(value, choice)}
-                onSelect={() => choose(choice)}
-                family={fontStack(choice, generic)}
-                title={family}
-              />
-            );
-          })}
-          {device.length > DEVICE_RESULT_LIMIT ? (
-            <p className="px-2 py-1 text-xs text-muted-foreground">
-              {device.length - DEVICE_RESULT_LIMIT} more — keep typing to narrow.
-            </p>
-          ) : null}
-          {typedInstalled ? (
-            <Option
-              selected={false}
-              onSelect={() => choose({ kind: "device", family: typed })}
-              family={fontStack({ kind: "device", family: typed }, generic)}
-              title={`Use “${typed}”`}
-              detail="Installed on this device"
+    <FieldRow label={label} htmlFor={id}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            id={id}
+            type="button"
+            className="flex h-10 w-full cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-left shadow-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <span className="min-w-0 flex-1 truncate text-[15px] text-foreground" style={{ fontFamily: triggerFamily ?? undefined }}>
+              {fontLabel(value, { same: same?.label, theme: theme?.label })}
+            </span>
+            <Icon name="ChevronDown" className="size-3.5 shrink-0 text-muted-foreground" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[min(22rem,calc(100vw-2rem))] p-0" mobileTitle={label}>
+          <div className="border-b border-border p-2">
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={access === "available" ? "Search fonts" : "Search, or type an installed font"}
+              aria-label="Search fonts"
+              className="h-8"
             />
-          ) : typed !== "" && !typedIsListed && device.length === 0 && bundled.length === 0 ? (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">“{typed}” isn't installed on this device.</p>
-          ) : null}
+          </div>
+          <div role="listbox" aria-label={label} className="max-h-80 overflow-y-auto p-1">
+            {needle === "" ? (
+              <>
+                {same ? (
+                  <Option
+                    selected={value.kind === "same"}
+                    onSelect={() => choose({ kind: "same" })}
+                    family={same.family}
+                    title={same.label}
+                    detail={same.detail}
+                  />
+                ) : null}
+                {theme ? (
+                  <Option
+                    selected={value.kind === "theme"}
+                    onSelect={() => choose({ kind: "theme" })}
+                    family={theme.family}
+                    title={theme.label}
+                    detail={theme.detail}
+                  />
+                ) : null}
+              </>
+            ) : null}
 
-          {access === "available" && needle === "" ? (
-            <div className="px-2 pb-2 pt-1">
-              <button
-                type="button"
-                onClick={findFonts}
-                disabled={scan.state === "scanning"}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-muted disabled:cursor-default disabled:opacity-60"
-              >
-                <Icon name={scan.state === "scanning" ? "Loading" : "Laptop"} className="size-3.5" />
-                {deviceFonts.length === 0 ? "Find fonts on this device" : "Refresh device fonts"}
-              </button>
-              {scan.state === "error" ? <p className="mt-1.5 text-xs text-destructive">{scan.message}</p> : null}
-            </div>
-          ) : null}
-          {access !== "available" && deviceFonts.length === 0 && needle === "" ? (
-            <p className="px-2 pb-2 text-xs leading-snug text-muted-foreground">
-              {access === "insecure"
-                ? "Listing fonts needs HTTPS. Type an installed font's name above."
-                : "This browser can't list fonts. Type an installed font's name above, e.g. Bookerly."}
-            </p>
-          ) : null}
-        </div>
-      </PopoverContent>
-    </Popover>
+            {bundled.length > 0 ? <GroupLabel>Included</GroupLabel> : null}
+            {bundled.map((font) => {
+              const choice: FontChoice = { kind: "bundled", id: font.id };
+              return (
+                <Option
+                  key={font.id}
+                  selected={sameChoice(value, choice)}
+                  onSelect={() => choose(choice)}
+                  family={fontStack(choice, generic)}
+                  title={font.label}
+                  detail={font.note}
+                />
+              );
+            })}
+
+            <GroupLabel>On this device</GroupLabel>
+            {device.slice(0, DEVICE_RESULT_LIMIT).map((family) => {
+              const choice: FontChoice = { kind: "device", family };
+              return (
+                <Option
+                  key={family}
+                  selected={sameChoice(value, choice)}
+                  onSelect={() => choose(choice)}
+                  family={fontStack(choice, generic)}
+                  title={family}
+                />
+              );
+            })}
+            {device.length > DEVICE_RESULT_LIMIT ? (
+              <p className="px-2 py-1 text-xs text-muted-foreground">
+                {device.length - DEVICE_RESULT_LIMIT} more — keep typing to narrow.
+              </p>
+            ) : null}
+            {typedInstalled ? (
+              <Option
+                selected={false}
+                onSelect={() => choose({ kind: "device", family: typed })}
+                family={fontStack({ kind: "device", family: typed }, generic)}
+                title={`Use “${typed}”`}
+                detail="Installed on this device"
+              />
+            ) : typed !== "" && !typedIsListed && device.length === 0 && bundled.length === 0 ? (
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">“{typed}” isn't installed on this device.</p>
+            ) : null}
+
+            {access === "available" && needle === "" ? (
+              <div className="px-2 pb-2 pt-1">
+                <button
+                  type="button"
+                  onClick={findFonts}
+                  disabled={scan.state === "scanning"}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-muted disabled:cursor-default disabled:opacity-60"
+                >
+                  <Icon name={scan.state === "scanning" ? "Loading" : "Laptop"} className="size-3.5" />
+                  {deviceFonts.length === 0 ? "Find fonts on this device" : "Refresh device fonts"}
+                </button>
+                {scan.state === "error" ? <p className="mt-1.5 text-xs text-destructive">{scan.message}</p> : null}
+              </div>
+            ) : null}
+            {access !== "available" && deviceFonts.length === 0 && needle === "" ? (
+              <p className="px-2 pb-2 text-xs leading-snug text-muted-foreground">
+                {access === "insecure"
+                  ? "Listing fonts needs HTTPS. Type an installed font's name above."
+                  : "This browser can't list fonts. Type an installed font's name above, e.g. Bookerly."}
+              </p>
+            ) : null}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </FieldRow>
   );
 }
