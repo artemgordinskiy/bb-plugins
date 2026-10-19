@@ -19,7 +19,7 @@ Its plugins then appear in Settings → Plugins under **Artem's plugins**.
 Install one directly:
 
 ```sh
-bb plugin install server-list@artem
+bb plugin install server-list@artemgordinskiy
 ```
 
 ## Releasing

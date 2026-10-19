@@ -1,7 +1,7 @@
 {
   "$schema": "https://getbb.app/schemas/marketplace.schema.json",
   "schemaVersion": 1,
-  "name": "artem",
+  "name": "artemgordinskiy",
   "displayName": "Artem's plugins",
   "description": "bb plugins for self-hosted bb servers.",
   "plugins": [
