@@ -1,4 +1,4 @@
-// bb-plugin-chat-typography backend: serves the bundled fonts. Everything
+// bb-plugin-typography backend: serves the bundled fonts. Everything
 // else runs in the browser; settings are stored per device.
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";

@@ -4,9 +4,9 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_CONFIG, parseConfig, sanitizeFamily, type TypographyConfig } from "./typography";
 
-const CONFIG_KEY = "bb-plugin-chat-typography:config:v1";
-const DEVICE_FONTS_KEY = "bb-plugin-chat-typography:device-fonts:v1";
-const CHANGE_EVENT = "bb-plugin-chat-typography:change";
+const CONFIG_KEY = "bb-plugin-typography:config:v1";
+const DEVICE_FONTS_KEY = "bb-plugin-typography:device-fonts:v1";
+const CHANGE_EVENT = "bb-plugin-typography:change";
 
 function read(key: string): unknown {
   try {

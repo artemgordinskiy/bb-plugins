@@ -1,7 +1,7 @@
 {
-  "name": "bb-plugin-chat-typography",
+  "name": "bb-plugin-typography",
   "version": "0.1.0",
-  "description": "Reading-grade typography for bb chat messages, with bundled and device fonts.",
+  "description": "Typography for bb: chat reading text, the interface and code fonts, with bundled and device fonts.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -9,8 +9,8 @@
     "bbPluginSdk": ">=0.6.49"
   },
   "bb": {
-    "name": "Chat Typography",
-    "description": "Book-like typography for chat messages: bundled Literata and other open fonts or any font on your device, with size, spacing, weight and color for replies, your messages, headings and code.",
+    "name": "Typography",
+    "description": "Fonts and sizes for bb: a book-like reading setup for chat messages, the interface font and size, and one code font for code blocks, diffs and the terminal. Bundled open fonts or any font on your device.",
     "branding": {
       "icon": "./assets/icon.svg"
     },

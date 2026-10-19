@@ -1,5 +1,6 @@
-// Font menu: theme font, the bundled fonts, and fonts on this device. Each
-// option is drawn in its own face so choosing is a matter of looking.
+// Font menu: "same as …" and theme options, the bundled fonts, and fonts on
+// this device. Each option is drawn in its own face so choosing is a matter
+// of looking.
 import { useMemo, useState, type ReactNode } from "react";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -60,21 +61,29 @@ function GroupLabel({ children }: { children: ReactNode }) {
 
 const CATEGORY_ORDER: Record<FontCategory, number> = { serif: 0, sans: 1, mono: 2 };
 
+/** A named option that stands for another font, drawn in that font. */
+export interface AliasOption {
+  label: string;
+  detail?: string;
+  family: string | null;
+}
+
 export function FontPicker({
   label,
   value,
   role,
-  sameLabel,
-  sameFamily,
+  same,
+  theme,
   onChange,
 }: {
   label: string;
   value: DerivedFontChoice;
-  role: "prose" | "code";
-  /** Offer "same as …" when set, e.g. "Same as replies". */
-  sameLabel?: string;
-  /** The face "same" resolves to, for drawing it. */
-  sameFamily?: string | null;
+  /** Code pickers list only the monospaced bundled fonts. */
+  role: "text" | "code";
+  /** Offer "same as …", e.g. "Same as replies". */
+  same?: AliasOption;
+  /** What "theme" means here; null hides it where it would equal `same`. */
+  theme: AliasOption | null;
   onChange: (value: DerivedFontChoice) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -118,7 +127,13 @@ export function FontPicker({
     }
   };
 
-  const triggerFamily = value.kind === "same" ? (sameFamily ?? null) : fontStack(value, role);
+  const generic = role === "code" ? "monospace" : "sans-serif";
+  const triggerFamily =
+    value.kind === "same"
+      ? (same?.family ?? null)
+      : value.kind === "theme"
+        ? (theme?.family ?? null)
+        : fontStack(value, generic);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -129,7 +144,7 @@ export function FontPicker({
           className="flex h-10 w-full cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-left shadow-xs hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <span className="min-w-0 flex-1 truncate text-[15px] text-foreground" style={{ fontFamily: triggerFamily ?? undefined }}>
-            {fontLabel(value, sameLabel)}
+            {fontLabel(value, { same: same?.label, theme: theme?.label })}
           </span>
           <Icon name="ChevronDown" className="size-3.5 shrink-0 text-muted-foreground" />
         </button>
@@ -147,21 +162,24 @@ export function FontPicker({
         <div role="listbox" aria-label={label} className="max-h-80 overflow-y-auto p-1">
           {needle === "" ? (
             <>
-              {sameLabel ? (
+              {same ? (
                 <Option
                   selected={value.kind === "same"}
                   onSelect={() => choose({ kind: "same" })}
-                  family={sameFamily ?? null}
-                  title={sameLabel}
+                  family={same.family}
+                  title={same.label}
+                  detail={same.detail}
                 />
               ) : null}
-              <Option
-                selected={value.kind === "theme"}
-                onSelect={() => choose({ kind: "theme" })}
-                family={role === "code" ? "var(--font-mono)" : "var(--font-sans)"}
-                title="Theme font"
-                detail="Whatever your bb theme uses"
-              />
+              {theme ? (
+                <Option
+                  selected={value.kind === "theme"}
+                  onSelect={() => choose({ kind: "theme" })}
+                  family={theme.family}
+                  title={theme.label}
+                  detail={theme.detail}
+                />
+              ) : null}
             </>
           ) : null}
 
@@ -173,7 +191,7 @@ export function FontPicker({
                 key={font.id}
                 selected={sameChoice(value, choice)}
                 onSelect={() => choose(choice)}
-                family={fontStack(choice, role)}
+                family={fontStack(choice, generic)}
                 title={font.label}
                 detail={font.note}
               />
@@ -188,7 +206,7 @@ export function FontPicker({
                 key={family}
                 selected={sameChoice(value, choice)}
                 onSelect={() => choose(choice)}
-                family={fontStack(choice, role)}
+                family={fontStack(choice, generic)}
                 title={family}
               />
             );
@@ -202,7 +220,7 @@ export function FontPicker({
             <Option
               selected={false}
               onSelect={() => choose({ kind: "device", family: typed })}
-              family={fontStack({ kind: "device", family: typed }, role)}
+              family={fontStack({ kind: "device", family: typed }, generic)}
               title={`Use “${typed}”`}
               detail="Installed on this device"
             />

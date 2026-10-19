@@ -19,7 +19,7 @@ export interface BundledFont {
 export const BUNDLED_FONTS = [
   {
     id: "literata",
-    family: "Literata CT",
+    family: "Literata",
     label: "Literata",
     category: "serif",
     note: "Book serif designed for long reading on screens",
@@ -28,7 +28,7 @@ export const BUNDLED_FONTS = [
   },
   {
     id: "source-serif-4",
-    family: "Source Serif 4 CT",
+    family: "Source Serif 4",
     label: "Source Serif 4",
     category: "serif",
     note: "Crisp transitional serif with optical sizes",
@@ -37,7 +37,7 @@ export const BUNDLED_FONTS = [
   },
   {
     id: "atkinson-hyperlegible-next",
-    family: "Atkinson Hyperlegible Next CT",
+    family: "Atkinson Hyperlegible Next",
     label: "Atkinson Hyperlegible Next",
     category: "sans",
     note: "Sans designed for distinguishable letterforms",
@@ -46,7 +46,7 @@ export const BUNDLED_FONTS = [
   },
   {
     id: "jetbrains-mono",
-    family: "JetBrains Mono CT",
+    family: "JetBrains Mono",
     label: "JetBrains Mono",
     category: "mono",
     note: "Tall-x-height monospace for code",

@@ -8,7 +8,7 @@ export type FontChoice =
   | { kind: "bundled"; id: BundledFontId }
   | { kind: "device"; family: string };
 
-/** Headings, your messages and code can follow another role's font. */
+/** A role that can follow another role's font ("same as …"). */
 export type DerivedFontChoice = FontChoice | { kind: "same" };
 
 /** A text color per appearance; null keeps the theme's color. */
@@ -28,12 +28,13 @@ export interface ProseStyle {
   color: ColorChoice;
 }
 
-export interface TypographyConfig {
+export interface ChatConfig {
   enabled: boolean;
   replies: ProseStyle & { font: FontChoice };
   /** Your own messages; "same" follows the replies font. */
   messages: ProseStyle & { font: DerivedFontChoice };
   headings: {
+    /** "same" follows the body font of each message. */
     font: DerivedFontChoice;
     weight: number;
     /** Multiplies the default heading sizes. */
@@ -43,11 +44,11 @@ export interface TypographyConfig {
     color: ColorChoice;
   };
   code: {
-    font: FontChoice;
+    /** "same" follows the app-wide code font. */
+    font: DerivedFontChoice;
     /** em, relative to the surrounding text */
     size: number;
     lineHeight: number;
-    ligatures: boolean;
   };
   rhythm: {
     /** em between paragraphs, lists and quotes */
@@ -60,7 +61,26 @@ export interface TypographyConfig {
   };
 }
 
+export interface TypographyConfig {
+  enabled: boolean;
+  /** bb's own UI: sidebar, menus, settings, composer. */
+  interface: {
+    font: FontChoice;
+    /** px for bb's base (`--text-sm`) size; null keeps the theme's scale. */
+    size: number | null;
+  };
+  /** Monospace everywhere: code blocks, file views, diffs, the terminal. */
+  code: {
+    font: FontChoice;
+    ligatures: boolean;
+    /** "same" follows the code font, keeping bb's Nerd Font glyph fallbacks. */
+    terminal: DerivedFontChoice;
+  };
+  chat: ChatConfig;
+}
+
 export const LIMITS = {
+  interfaceSize: { min: 11, max: 17, step: 0.5 },
   size: { min: 12, max: 26, step: 0.5 },
   lineHeight: { min: 1.2, max: 2.1, step: 0.05 },
   weight: { min: 300, max: 700, step: 10 },
@@ -76,49 +96,51 @@ export const LIMITS = {
 const THEME_COLOR: ColorChoice = { light: null, dark: null };
 
 /**
- * The defaults are a book-like reading setup: Literata at 17px with a 1.65
- * line height (about 28px), a slightly lighter weight in dark mode, code a
- * notch smaller in JetBrains Mono, and paragraph gaps sized for the larger
- * text. Your messages keep the same face one pixel smaller so replies stay
- * the primary reading surface.
+ * The interface keeps the theme's own face and scale, so installing the
+ * plugin does not rearrange bb. Code everywhere moves to JetBrains Mono (the
+ * terminal keeps bb's Nerd Font stack). Chat gets a book-like reading setup:
+ * Literata at 17px with a 1.65 line height (about 28px), your messages one
+ * pixel smaller, a slightly lighter weight in dark mode, code a notch
+ * smaller than the text around it, and paragraph gaps sized for the larger
+ * text.
  */
 export const DEFAULT_CONFIG: TypographyConfig = {
   enabled: true,
-  replies: {
-    font: { kind: "bundled", id: "literata" },
-    size: 17,
-    lineHeight: 1.65,
-    weight: 400,
-    letterSpacing: 0,
-    color: THEME_COLOR,
-  },
-  messages: {
-    font: { kind: "same" },
-    size: 16,
-    lineHeight: 1.6,
-    weight: 400,
-    letterSpacing: 0,
-    color: THEME_COLOR,
-  },
-  headings: {
-    font: { kind: "same" },
-    weight: 620,
-    scale: 1,
-    letterSpacing: -0.01,
-    color: THEME_COLOR,
-  },
-  code: {
-    font: { kind: "bundled", id: "jetbrains-mono" },
-    size: 0.84,
-    lineHeight: 1.55,
-    ligatures: false,
-  },
-  rhythm: {
-    paragraphSpacing: 0.75,
-    darkWeightOffset: -20,
-    textWrap: "pretty",
-    hyphens: false,
-    opticalSizing: true,
+  interface: { font: { kind: "theme" }, size: null },
+  code: { font: { kind: "bundled", id: "jetbrains-mono" }, ligatures: false, terminal: { kind: "theme" } },
+  chat: {
+    enabled: true,
+    replies: {
+      font: { kind: "bundled", id: "literata" },
+      size: 17,
+      lineHeight: 1.65,
+      weight: 400,
+      letterSpacing: 0,
+      color: THEME_COLOR,
+    },
+    messages: {
+      font: { kind: "same" },
+      size: 16,
+      lineHeight: 1.6,
+      weight: 400,
+      letterSpacing: 0,
+      color: THEME_COLOR,
+    },
+    headings: {
+      font: { kind: "same" },
+      weight: 620,
+      scale: 1,
+      letterSpacing: -0.01,
+      color: THEME_COLOR,
+    },
+    code: { font: { kind: "same" }, size: 0.84, lineHeight: 1.55 },
+    rhythm: {
+      paragraphSpacing: 0.75,
+      darkWeightOffset: -20,
+      textWrap: "pretty",
+      hyphens: false,
+      opticalSizing: true,
+    },
   },
 };
 
@@ -126,80 +148,85 @@ export interface Preset {
   id: string;
   label: string;
   description: string;
-  apply(config: TypographyConfig): TypographyConfig;
+  apply(chat: ChatConfig): ChatConfig;
 }
 
 function withProse(
-  config: TypographyConfig,
-  replies: Partial<TypographyConfig["replies"]>,
-  messages: Partial<TypographyConfig["messages"]>,
-): TypographyConfig {
+  chat: ChatConfig,
+  replies: Partial<ChatConfig["replies"]>,
+  messages: Partial<ChatConfig["messages"]>,
+  headings: Partial<ChatConfig["headings"]>,
+  paragraphSpacing: number,
+): ChatConfig {
   return {
-    ...config,
+    ...chat,
     enabled: true,
-    replies: { ...config.replies, ...replies },
-    messages: { ...config.messages, ...messages },
+    replies: { ...chat.replies, ...replies },
+    messages: { ...chat.messages, font: { kind: "same" }, ...messages },
+    headings: { ...chat.headings, font: { kind: "same" }, ...headings },
+    rhythm: { ...chat.rhythm, paragraphSpacing },
   };
 }
 
-/** Presets change faces, sizes and spacing; they keep your colors. */
+/** Chat presets change faces, sizes and spacing; they keep your colors. */
 export const PRESETS: readonly Preset[] = [
   {
     id: "book",
     label: "Book",
     description: "Literata, 17px",
-    apply: (config) => ({
-      ...withProse(
-        config,
-        { font: DEFAULT_CONFIG.replies.font, size: 17, lineHeight: 1.65, weight: 400, letterSpacing: 0 },
-        { font: { kind: "same" }, size: 16, lineHeight: 1.6, weight: 400, letterSpacing: 0 },
+    apply: (chat) =>
+      withProse(
+        chat,
+        { font: DEFAULT_CONFIG.chat.replies.font, size: 17, lineHeight: 1.65, weight: 400, letterSpacing: 0 },
+        { size: 16, lineHeight: 1.6, weight: 400, letterSpacing: 0 },
+        { weight: 620, letterSpacing: -0.01 },
+        0.75,
       ),
-      headings: { ...config.headings, font: { kind: "same" }, weight: 620, letterSpacing: -0.01 },
-      rhythm: { ...config.rhythm, paragraphSpacing: 0.75 },
-    }),
   },
   {
     id: "editorial",
     label: "Editorial",
     description: "Source Serif 4, 17.5px",
-    apply: (config) => ({
-      ...withProse(
-        config,
+    apply: (chat) =>
+      withProse(
+        chat,
         { font: { kind: "bundled", id: "source-serif-4" }, size: 17.5, lineHeight: 1.6, weight: 400, letterSpacing: 0 },
-        { font: { kind: "same" }, size: 16.5, lineHeight: 1.55, weight: 400, letterSpacing: 0 },
+        { size: 16.5, lineHeight: 1.55, weight: 400, letterSpacing: 0 },
+        { weight: 650, letterSpacing: -0.015 },
+        0.7,
       ),
-      headings: { ...config.headings, font: { kind: "same" }, weight: 650, letterSpacing: -0.015 },
-      rhythm: { ...config.rhythm, paragraphSpacing: 0.7 },
-    }),
   },
   {
     id: "hyperlegible",
     label: "Hyperlegible",
     description: "Atkinson Next, 16.5px",
-    apply: (config) => ({
-      ...withProse(
-        config,
-        { font: { kind: "bundled", id: "atkinson-hyperlegible-next" }, size: 16.5, lineHeight: 1.6, weight: 400, letterSpacing: 0.005 },
-        { font: { kind: "same" }, size: 16, lineHeight: 1.55, weight: 400, letterSpacing: 0.005 },
+    apply: (chat) =>
+      withProse(
+        chat,
+        {
+          font: { kind: "bundled", id: "atkinson-hyperlegible-next" },
+          size: 16.5,
+          lineHeight: 1.6,
+          weight: 400,
+          letterSpacing: 0.005,
+        },
+        { size: 16, lineHeight: 1.55, weight: 400, letterSpacing: 0.005 },
+        { weight: 680, letterSpacing: -0.005 },
+        0.7,
       ),
-      headings: { ...config.headings, font: { kind: "same" }, weight: 680, letterSpacing: -0.005 },
-      rhythm: { ...config.rhythm, paragraphSpacing: 0.7 },
-    }),
   },
   {
-    id: "theme",
-    label: "Theme fonts",
-    description: "bb's faces, larger",
-    apply: (config) => ({
-      ...withProse(
-        config,
+    id: "interface",
+    label: "Interface font",
+    description: "Interface font, 15px",
+    apply: (chat) =>
+      withProse(
+        chat,
         { font: { kind: "theme" }, size: 15, lineHeight: 1.6, weight: 400, letterSpacing: 0 },
-        { font: { kind: "same" }, size: 14.5, lineHeight: 1.55, weight: 400, letterSpacing: 0 },
+        { size: 14.5, lineHeight: 1.55, weight: 400, letterSpacing: 0 },
+        { weight: 600, letterSpacing: -0.01 },
+        0.65,
       ),
-      headings: { ...config.headings, font: { kind: "same" }, weight: 600, letterSpacing: -0.01 },
-      code: { ...config.code, font: { kind: "theme" } },
-      rhythm: { ...config.rhythm, paragraphSpacing: 0.65 },
-    }),
   },
 ];
 
@@ -209,6 +236,10 @@ export const PRESETS: readonly Preset[] = [
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
 }
 
 function clamp(value: unknown, limits: { min: number; max: number }, fallback: number): number {
@@ -239,8 +270,8 @@ function parseColor(value: unknown): string | null {
 }
 
 function parseColorChoice(value: unknown): ColorChoice {
-  if (!isRecord(value)) return THEME_COLOR;
-  return { light: parseColor(value.light), dark: parseColor(value.dark) };
+  const input = record(value);
+  return { light: parseColor(input.light), dark: parseColor(input.dark) };
 }
 
 function parseFont(value: unknown, fallback: FontChoice): FontChoice {
@@ -266,7 +297,7 @@ function parseDerivedFont(value: unknown, fallback: DerivedFontChoice): DerivedF
 }
 
 function parseProse(value: unknown, fallback: ProseStyle): ProseStyle {
-  const input = isRecord(value) ? value : {};
+  const input = record(value);
   return {
     size: clamp(input.size, LIMITS.size, fallback.size),
     lineHeight: clamp(input.lineHeight, LIMITS.lineHeight, fallback.lineHeight),
@@ -276,21 +307,18 @@ function parseProse(value: unknown, fallback: ProseStyle): ProseStyle {
   };
 }
 
-export function parseConfig(value: unknown): TypographyConfig {
-  const input = isRecord(value) ? value : {};
-  const d = DEFAULT_CONFIG;
-  const replies = isRecord(input.replies) ? input.replies : {};
-  const messages = isRecord(input.messages) ? input.messages : {};
-  const headings = isRecord(input.headings) ? input.headings : {};
-  const code = isRecord(input.code) ? input.code : {};
-  const rhythm = isRecord(input.rhythm) ? input.rhythm : {};
+function parseChat(value: unknown): ChatConfig {
+  const input = record(value);
+  const d = DEFAULT_CONFIG.chat;
+  const replies = record(input.replies);
+  const messages = record(input.messages);
+  const headings = record(input.headings);
+  const code = record(input.code);
+  const rhythm = record(input.rhythm);
   return {
     enabled: bool(input.enabled, d.enabled),
     replies: { ...parseProse(replies, d.replies), font: parseFont(replies.font, d.replies.font) },
-    messages: {
-      ...parseProse(messages, d.messages),
-      font: parseDerivedFont(messages.font, d.messages.font),
-    },
+    messages: { ...parseProse(messages, d.messages), font: parseDerivedFont(messages.font, d.messages.font) },
     headings: {
       font: parseDerivedFont(headings.font, d.headings.font),
       weight: clamp(headings.weight, LIMITS.headingWeight, d.headings.weight),
@@ -299,10 +327,9 @@ export function parseConfig(value: unknown): TypographyConfig {
       color: parseColorChoice(headings.color),
     },
     code: {
-      font: parseFont(code.font, d.code.font),
+      font: parseDerivedFont(code.font, d.code.font),
       size: clamp(code.size, LIMITS.codeSize, d.code.size),
       lineHeight: clamp(code.lineHeight, LIMITS.codeLineHeight, d.code.lineHeight),
-      ligatures: bool(code.ligatures, d.code.ligatures),
     },
     rhythm: {
       paragraphSpacing: clamp(rhythm.paragraphSpacing, LIMITS.paragraphSpacing, d.rhythm.paragraphSpacing),
@@ -314,6 +341,76 @@ export function parseConfig(value: unknown): TypographyConfig {
   };
 }
 
+export function parseConfig(value: unknown): TypographyConfig {
+  const input = record(value);
+  const d = DEFAULT_CONFIG;
+  const ui = record(input.interface);
+  const code = record(input.code);
+  return {
+    enabled: bool(input.enabled, d.enabled),
+    interface: {
+      font: parseFont(ui.font, d.interface.font),
+      size: typeof ui.size === "number" ? clamp(ui.size, LIMITS.interfaceSize, 13) : null,
+    },
+    code: {
+      font: parseFont(code.font, d.code.font),
+      ligatures: bool(code.ligatures, d.code.ligatures),
+      terminal: parseDerivedFont(code.terminal, d.code.terminal),
+    },
+    chat: parseChat(input.chat),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Theme values
+
+export const TEXT_TOKENS = [
+  "--text-2xs",
+  "--text-xs",
+  "--text-sm",
+  "--text-base",
+  "--text-lg",
+  "--text-xl",
+  "--text-2xl",
+] as const;
+
+export type TextToken = (typeof TEXT_TOKENS)[number];
+
+/**
+ * The theme's own font stacks and size scale, read from the page before this
+ * plugin's rules apply. Overrides fall back to these literal values: a rule
+ * like `--font-sans: "X", var(--font-sans)` would reference itself.
+ */
+export interface ThemeTokens {
+  fontSans: string;
+  fontMono: string;
+  fontTerminal: string;
+  /** px */
+  text: Partial<Record<TextToken, number>>;
+}
+
+/** bb 0.46's defaults, for when the page cannot be read. */
+export const BB_THEME: ThemeTokens = {
+  fontSans: '"Inter Variable", Inter, sans-serif',
+  fontMono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  fontTerminal:
+    '"JetBrainsMono Nerd Font Mono", "MesloLGS NF", "Symbols Nerd Font Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  text: {
+    "--text-2xs": 10,
+    "--text-xs": 12,
+    "--text-sm": 13,
+    "--text-base": 15,
+    "--text-lg": 18,
+    "--text-xl": 20,
+    "--text-2xl": 24,
+  },
+};
+
+/** The theme's base interface size in px. */
+export function themeBaseSize(theme: ThemeTokens): number {
+  return theme.text["--text-sm"] ?? 13;
+}
+
 // ---------------------------------------------------------------------------
 // Stylesheet
 
@@ -321,31 +418,42 @@ export function parseConfig(value: unknown): TypographyConfig {
  * bb renders every chat message's markdown in `[data-markdown-preview]`
  * inside a `[data-message-column]`; the assistant's column carries the
  * `group/message` class and the user's bubble column does not. The settings
- * preview marks its samples with `data-chat-typography-sample`.
+ * preview marks its samples with `data-typography-sample`.
  */
 export const SCOPES = {
   replies:
-    ':is([data-message-column].group\\/message, [data-chat-typography-sample="replies"]) [data-markdown-preview]',
+    ':is([data-message-column].group\\/message, [data-typography-sample="replies"]) [data-markdown-preview]',
   messages:
-    ':is([data-message-column]:not(.group\\/message), [data-chat-typography-sample="messages"]) [data-markdown-preview]',
+    ':is([data-message-column]:not(.group\\/message), [data-typography-sample="messages"]) [data-markdown-preview]',
 } as const;
 
-export function fontStack(choice: FontChoice, role: "prose" | "code"): string | null {
-  const themeVar = role === "code" ? "var(--font-mono)" : "var(--font-sans)";
+/** The font-family value for a choice, or null to keep the theme's. */
+export function fontStack(choice: FontChoice, fallback: string): string | null {
   switch (choice.kind) {
     case "theme":
       return null;
     case "bundled": {
       const font = bundledFont(choice.id);
-      if (font === undefined) return null;
-      return `"${font.family}", ${GENERIC_FAMILY[font.category]}`;
+      return font === undefined ? null : `"${font.family}", ${GENERIC_FAMILY[font.category]}`;
     }
     case "device":
-      return `"${sanitizeFamily(choice.family)}", ${themeVar}`;
+      return `"${sanitizeFamily(choice.family)}", ${fallback}`;
   }
 }
 
-function resolve(choice: DerivedFontChoice, parent: FontChoice): FontChoice {
+/** The face a choice draws first; null for the theme's. */
+export function primaryFamily(choice: FontChoice): string | null {
+  switch (choice.kind) {
+    case "theme":
+      return null;
+    case "bundled":
+      return bundledFont(choice.id)?.family ?? null;
+    case "device":
+      return sanitizeFamily(choice.family);
+  }
+}
+
+export function resolveFont(choice: DerivedFontChoice, parent: FontChoice): FontChoice {
   return choice.kind === "same" ? parent : choice;
 }
 
@@ -368,22 +476,56 @@ function colorRules(scope: string, color: ColorChoice, property = "--foreground"
   ];
 }
 
+// `html:root` outranks the theme's `:root` token rules without !important.
+const ROOT = "html:root";
+
+function rootRules(config: TypographyConfig, theme: ThemeTokens): string[] {
+  const { interface: ui, code } = config;
+  const declarations: Record<string, string | null> = {
+    "--font-sans": fontStack(ui.font, theme.fontSans),
+  };
+  const codeStack = fontStack(code.font, theme.fontMono);
+  declarations["--font-mono"] = codeStack;
+  // Diffs and the source viewer draw in shadow DOM from their own variable.
+  declarations["--diffs-font-family"] = codeStack;
+  const terminalFamily = primaryFamily(resolveFont(code.terminal, code.font));
+  // Keep bb's stack behind the choice so Nerd Font glyphs still render.
+  declarations["--font-terminal"] = terminalFamily === null ? null : `"${terminalFamily}", ${theme.fontTerminal}`;
+  if (!code.ligatures) declarations["--diffs-font-features"] = '"liga" 0, "calt" 0';
+
+  if (ui.size !== null) {
+    const scale = ui.size / themeBaseSize(theme);
+    for (const token of TEXT_TOKENS) {
+      const value = theme.text[token];
+      if (value !== undefined) declarations[token] = `${num(value * scale, 3)}px`;
+    }
+  }
+  return [
+    rule(ROOT, declarations),
+    code.ligatures
+      ? ""
+      : rule(':is(code, pre, kbd, samp, .font-mono, [class*="font-mono"])', {
+          "font-variant-ligatures": "none",
+        }),
+  ];
+}
+
 function proseRules(scope: string, style: ProseStyle, font: FontChoice, config: TypographyConfig): string[] {
-  const { rhythm, headings, code } = config;
-  const headingFont = resolve(headings.font, font);
-  const codeFont = code.font;
+  const { rhythm, headings, code } = config.chat;
+  const headingFont = resolveFont(headings.font, font);
+  const codeFont = resolveFont(code.font, config.code.font);
   const darkWeight = Math.min(900, Math.max(100, style.weight + rhythm.darkWeightOffset));
   const h = (base: number) => `${num(base * headings.scale)}em`;
   return [
     rule(scope, {
       // Sizes inside the markdown (inline code, small labels) follow the text
-      // instead of bb's fixed 12-18px scale.
+      // instead of bb's fixed interface scale.
       "--text-xs": "0.84em",
       "--text-sm": "1em",
       "--text-base": "1.08em",
       "--text-lg": "1.25em",
-      "--chat-typography-gap": `${num(rhythm.paragraphSpacing)}em`,
-      "font-family": fontStack(font, "prose"),
+      "--typography-gap": `${num(rhythm.paragraphSpacing)}em`,
+      "font-family": fontStack(font, "var(--font-sans)"),
       "font-size": `${num(style.size)}px`,
       "line-height": num(style.lineHeight),
       "font-weight": String(style.weight),
@@ -396,11 +538,11 @@ function proseRules(scope: string, style: ProseStyle, font: FontChoice, config: 
     rule(`html.dark ${scope}`, { "font-weight": String(darkWeight) }),
     ...colorRules(scope, style.color),
     rule(`${scope} :is(p, ul, ol, blockquote, table):not(:last-child)`, {
-      "margin-bottom": "var(--chat-typography-gap)",
+      "margin-bottom": "var(--typography-gap)",
     }),
-    rule(`${scope} li:not(:last-child)`, { "margin-bottom": "calc(var(--chat-typography-gap) * 0.4)" }),
+    rule(`${scope} li:not(:last-child)`, { "margin-bottom": "calc(var(--typography-gap) * 0.4)" }),
     rule(`${scope} :is(h1, h2, h3, h4, h5, h6)`, {
-      "font-family": fontStack(headingFont, "prose"),
+      "font-family": fontStack(headingFont, "var(--font-sans)"),
       "font-weight": String(headings.weight),
       "letter-spacing": `${num(headings.letterSpacing)}em`,
       "line-height": "1.3",
@@ -414,27 +556,33 @@ function proseRules(scope: string, style: ProseStyle, font: FontChoice, config: 
     rule(`${scope} h4`, { "font-size": h(1) }),
     rule(`${scope} :is(h5, h6)`, { "font-size": "0.82em", "letter-spacing": "0.04em" }),
     ...colorRules(`${scope} :is(h1, h2, h3, h4)`, headings.color, "color"),
-    // !important so the Fonts plugin's global code rule cannot resize chat code.
+    // !important so another plugin's global code rule cannot resize chat code.
     rule(`${scope} :is(code, kbd, samp)`, {
-      "font-family": `${fontStack(codeFont, "code") ?? "var(--font-mono)"} !important`,
+      "font-family": `${fontStack(codeFont, "var(--font-mono)") ?? "var(--font-mono)"} !important`,
       "font-size": `${num(code.size)}em !important`,
       "letter-spacing": "0",
-      "font-variant-ligatures": code.ligatures ? "normal" : "none",
-      "font-feature-settings": code.ligatures ? "normal" : '"liga" 0, "calt" 0',
     }),
     rule(`${scope} pre`, { "line-height": num(code.lineHeight) }),
     rule(`${scope} pre code`, { "line-height": "inherit" }),
-  ].filter((text) => text !== "");
+  ];
 }
 
 /** The stylesheet for a config; empty when the plugin is switched off. */
-export function buildStylesheet(config: TypographyConfig): string {
+export function buildStylesheet(config: TypographyConfig, theme: ThemeTokens = BB_THEME): string {
   if (!config.enabled) return "";
-  const messagesFont = resolve(config.messages.font, config.replies.font);
+  const chat = config.chat;
+  const messagesFont = resolveFont(chat.messages.font, chat.replies.font);
   return [
-    ...proseRules(SCOPES.replies, config.replies, config.replies.font, config),
-    ...proseRules(SCOPES.messages, config.messages, messagesFont, config),
-  ].join("\n");
+    ...rootRules(config, theme),
+    ...(chat.enabled
+      ? [
+          ...proseRules(SCOPES.replies, chat.replies, chat.replies.font, config),
+          ...proseRules(SCOPES.messages, chat.messages, messagesFont, config),
+        ]
+      : []),
+  ]
+    .filter((text) => text !== "")
+    .join("\n");
 }
 
 /** `@font-face` rules for every bundled face, served by this plugin's backend. */
@@ -452,12 +600,12 @@ export function buildFontFaces(
     .join("\n");
 }
 
-export function fontLabel(choice: DerivedFontChoice, sameLabel = "Same as replies"): string {
+export function fontLabel(choice: DerivedFontChoice, labels: { same?: string; theme?: string } = {}): string {
   switch (choice.kind) {
     case "same":
-      return sameLabel;
+      return labels.same ?? "Same";
     case "theme":
-      return "Theme font";
+      return labels.theme ?? "Theme font";
     case "bundled":
       return bundledFont(choice.id)?.label ?? choice.id;
     case "device":
