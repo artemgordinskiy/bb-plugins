@@ -1,8 +1,8 @@
 {
   "name": "bb-plugin-server-list",
   "version": "0.1.0",
-  "private": true,
   "description": "Lists self-hosted bb servers in the sidebar and switches between them.",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "bb": ">=0.46",

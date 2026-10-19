@@ -28,3 +28,7 @@ Each plugin is released by a `<plugin>/vX.Y.Z` tag matching the `version` in
 its `package.json`, for example `server-list/v0.1.0`. The marketplace entry
 resolves a semver range over those tags, so a new tag reaches installed
 servers through `bb plugin update` without a catalog change.
+
+## License
+
+[MIT](LICENSE)
