@@ -20,6 +20,22 @@
           "tagPrefix": "server-list/"
         }
       }
+    },
+    {
+      "id": "chat-typography",
+      "displayName": "Chat Typography",
+      "description": "Book-like typography for chat messages: bundled open fonts or any font on your device, with size, spacing, weight and color for replies, your messages, headings and code.",
+      "icon": "TextWrap",
+      "tags": ["typography", "fonts", "appearance"],
+      "author": { "name": "Artem Gordinskiy", "github": "artemgordinskiy" },
+      "source": {
+        "git": {
+          "url": "https://github.com/artemgordinskiy/bb-plugins.git",
+          "subdir": "plugins/chat-typography",
+          "range": "^0.1.0",
+          "tagPrefix": "chat-typography/"
+        }
+      }
     }
   ]
 }

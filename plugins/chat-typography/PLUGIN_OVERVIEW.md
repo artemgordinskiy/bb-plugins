@@ -1,0 +1,5 @@
+Chat Typography restyles the text of chat messages, and only that, so long replies read like a well-set page while the rest of bb keeps its theme. It starts from a book-like setup: Literata at 17px with generous line spacing, your own messages a size smaller, JetBrains Mono for code, wider paragraph gaps, and a slightly lighter weight in dark mode where light text reads heavier.
+
+Everything is adjustable, separately for replies, your messages, headings and code: font, size, line height, weight, letter spacing, and light and dark text colors with a contrast check against the real message background. Presets switch between Book, Editorial, Hyperlegible and your theme's own fonts, and a live preview shows each change before you return to a thread.
+
+Four open-licensed fonts come with the plugin and are served by your own bb server, so they look the same on every device without contacting a font service. You can also use any font installed on the device you are reading on, such as Bookerly; Chromium browsers and the desktop app can list them for you. Settings are kept per device, so a phone and a desktop can each have their own size.

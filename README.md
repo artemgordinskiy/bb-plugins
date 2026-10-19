@@ -15,6 +15,7 @@ Its plugins then appear in Settings → Plugins under **Artem's plugins**.
 | Plugin | What it does |
 | --- | --- |
 | [Server List](plugins/server-list) | Lists your self-hosted bb servers in the sidebar footer and switches between them, without a bb account. |
+| [Chat Typography](plugins/chat-typography) | Book-like typography for chat messages, with bundled open fonts or any font on your device. |
 
 Install one directly:
 
