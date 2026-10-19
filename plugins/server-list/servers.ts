@@ -84,27 +84,51 @@ export function parseDesktopChoices(value: unknown): DesktopChoice[] | null {
   return choices;
 }
 
-/** Finds the desktop app's saved choice for a configured server. */
-export function desktopChoiceFor(
-  server: ConfiguredServer,
-  choices: readonly DesktopChoice[],
-): DesktopChoice | undefined {
-  return choices.find((choice) => choice.name === server.host);
+/**
+ * The desktop app's id for a saved custom server: `custom:` and the SHA-256
+ * hex digest of its URL. The desktop app stores a root URL as its origin, the
+ * same form as ConfiguredServer.url. Returns null without Web Crypto (an
+ * insecure context), leaving name matching only.
+ */
+export async function customServerId(url: string): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle === undefined) return null;
+  const digest = await subtle.digest("SHA-256", new TextEncoder().encode(url));
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"));
+  return `custom:${hex.join("")}`;
 }
 
 /**
- * Picks which configured server this window is showing: the desktop app's
- * active choice when known, otherwise the page's own host.
+ * Pairs each configured server with the desktop app's saved choice, keyed by
+ * host. A choice matches by its custom-server id, which survives a custom name
+ * in the desktop app, or else by a name equal to the server's host (the
+ * desktop app's default name).
+ */
+export function matchDesktopChoices(
+  servers: readonly ConfiguredServer[],
+  ids: ReadonlyMap<string, string>,
+  choices: readonly DesktopChoice[],
+): Map<string, DesktopChoice> {
+  const matches = new Map<string, DesktopChoice>();
+  for (const server of servers) {
+    const id = ids.get(server.url);
+    const choice =
+      (id === undefined ? undefined : choices.find((candidate) => candidate.id === id)) ??
+      choices.find((candidate) => candidate.name === server.host);
+    if (choice !== undefined) matches.set(server.host, choice);
+  }
+  return matches;
+}
+
+/**
+ * Picks which configured server this window is showing: the one matched to the
+ * desktop app's active choice when known, otherwise the page's own host.
  */
 export function currentServer(
   servers: readonly ConfiguredServer[],
   pageHost: string,
-  choices: readonly DesktopChoice[] | null,
+  matches: ReadonlyMap<string, DesktopChoice> | null,
 ): ConfiguredServer | undefined {
-  const active = choices?.find((choice) => choice.active);
-  if (active !== undefined) {
-    const match = servers.find((server) => server.host === active.name);
-    if (match !== undefined) return match;
-  }
-  return servers.find((server) => server.host === pageHost);
+  const active = servers.find((server) => matches?.get(server.host)?.active === true);
+  return active ?? servers.find((server) => server.host === pageHost);
 }

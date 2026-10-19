@@ -21,7 +21,11 @@ bb plugin config server-list set servers $'home https://bb.example.com\nwork htt
 ## Behavior
 
 - Desktop app: switches through the desktop app's own server list, matched by
-  URL host. A configured server that is not saved in the desktop app is shown
-  disabled until the user adds its URL in the desktop app's server settings.
-- Browser and mobile app: navigates the window to the server's URL. Signing
-  in to that server (for example Cloudflare Access) is handled by the browser.
+  URL (a custom name on a saved server does not matter). A configured server
+  that is not saved in the desktop app is shown disabled until the user adds
+  its URL in the desktop app's server settings.
+- Mobile app: pages cannot switch the app's server, so choosing a server opens
+  the app's device settings; the user picks it under Servers, after adding it
+  there once.
+- Browser: navigates the window to the server's URL. Signing in to that server
+  (for example Cloudflare Access) is handled by the browser.
