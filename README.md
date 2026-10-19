@@ -1,0 +1,30 @@
+# bb plugins
+
+[bb](https://getbb.app) plugins for self-hosted bb servers.
+
+## Add the marketplace
+
+```sh
+bb marketplace add git:github.com/artemgordinskiy/bb-plugins@main
+```
+
+Its plugins then appear in Settings → Plugins under **Artem's plugins**.
+
+## Plugins
+
+| Plugin | What it does |
+| --- | --- |
+| [Server List](plugins/server-list) | Lists your self-hosted bb servers in the sidebar footer and switches between them, without a bb account. |
+
+Install one directly:
+
+```sh
+bb plugin install server-list@artem
+```
+
+## Releasing
+
+Each plugin is released by a `<plugin>/vX.Y.Z` tag matching the `version` in
+its `package.json`, for example `server-list/v0.1.0`. The marketplace entry
+resolves a semver range over those tags, so a new tag reaches installed
+servers through `bb plugin update` without a catalog change.

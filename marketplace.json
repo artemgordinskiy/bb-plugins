@@ -1,0 +1,25 @@
+{
+  "$schema": "https://getbb.app/schemas/marketplace.schema.json",
+  "schemaVersion": 1,
+  "name": "artem",
+  "displayName": "Artem's plugins",
+  "description": "bb plugins for self-hosted bb servers.",
+  "plugins": [
+    {
+      "id": "server-list",
+      "displayName": "Server List",
+      "description": "Lists your self-hosted bb servers in the sidebar footer and switches between them, without a bb account.",
+      "icon": "ComputerCloud",
+      "tags": ["servers", "self-hosted"],
+      "author": { "name": "Artem Gordinskiy", "github": "artemgordinskiy" },
+      "source": {
+        "git": {
+          "url": "https://github.com/artemgordinskiy/bb-plugins.git",
+          "subdir": "plugins/server-list",
+          "range": "^0.1.0",
+          "tagPrefix": "server-list/"
+        }
+      }
+    }
+  ]
+}
