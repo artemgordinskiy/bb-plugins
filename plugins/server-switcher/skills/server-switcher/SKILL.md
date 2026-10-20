@@ -1,9 +1,9 @@
 ---
-name: server-list
-description: Explain or configure the Server List plugin, the sidebar-footer list of self-hosted bb servers that switches between them without a bb account.
+name: server-switcher
+description: Explain or configure the Server Switcher plugin, the sidebar-footer list of self-hosted bb servers that switches between them without a bb account.
 ---
 
-# Server List
+# Server Switcher
 
 The Servers item in the sidebar footer lists the bb servers configured in this
 plugin's `servers` setting and switches between them.
@@ -15,7 +15,7 @@ Blank lines and lines starting with `#` are ignored. Settings are stored per
 bb server, so set the same list on every server that has the plugin.
 
 ```
-bb plugin config server-list set servers $'home https://bb.example.com\nwork https://bb-work.example.com'
+bb plugin config server-switcher set servers $'home https://bb.example.com\nwork https://bb-work.example.com'
 ```
 
 ## Behavior

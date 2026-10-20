@@ -1,8 +1,11 @@
-# Server List
+# Server Switcher
 
 Lists your self-hosted bb servers in a strip above the sidebar footer and
 switches between them. It needs no bb account or getbb.app relay: the list
 comes from this plugin's `servers` setting.
+
+Until 0.2.0 it was called Server List (`server-list`). The id changed, so
+remove `server-list`, install `server-switcher` and set `servers` again.
 
 ## Configure
 
@@ -10,7 +13,7 @@ One server per line as `<name> <url>`; lines starting with `#` are ignored.
 Settings are stored per bb server, so set the same list on each one.
 
 ```sh
-bb plugin config server-list set servers $'home https://bb.example.com\nwork https://bb-work.example.com'
+bb plugin config server-switcher set servers $'home https://bb.example.com\nwork https://bb-work.example.com'
 ```
 
 ## Behavior

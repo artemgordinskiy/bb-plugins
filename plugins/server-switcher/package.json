@@ -1,6 +1,6 @@
 {
-  "name": "bb-plugin-server-list",
-  "version": "0.1.1",
+  "name": "bb-plugin-server-switcher",
+  "version": "0.2.0",
   "description": "Lists self-hosted bb servers in the sidebar and switches between them.",
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,7 @@
     "bbPluginSdk": ">=0.6.49"
   },
   "bb": {
-    "name": "Server List",
+    "name": "Server Switcher",
     "description": "Lists your self-hosted bb servers in the sidebar footer and switches between them, without a bb account.",
     "branding": {
       "icon": "ComputerCloud"

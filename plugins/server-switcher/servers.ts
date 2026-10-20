@@ -1,4 +1,4 @@
-// Pure server-list logic shared by the settings validator (server.ts) and the
+// Pure server-switcher logic shared by the settings validator (server.ts) and the
 // sidebar disclosure (app.tsx).
 
 export interface ConfiguredServer {

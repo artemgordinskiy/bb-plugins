@@ -6,8 +6,8 @@
   "description": "bb plugins for self-hosted bb servers.",
   "plugins": [
     {
-      "id": "server-list",
-      "displayName": "Server List",
+      "id": "server-switcher",
+      "displayName": "Server Switcher",
       "description": "Lists your self-hosted bb servers in the sidebar footer and switches between them, without a bb account.",
       "icon": "ComputerCloud",
       "tags": ["servers", "self-hosted"],
@@ -15,9 +15,9 @@
       "source": {
         "git": {
           "url": "https://github.com/artemgordinskiy/bb-plugins.git",
-          "subdir": "plugins/server-list",
-          "range": "^0.1.0",
-          "tagPrefix": "server-list/"
+          "subdir": "plugins/server-switcher",
+          "range": "^0.2.0",
+          "tagPrefix": "server-switcher/"
         }
       }
     },

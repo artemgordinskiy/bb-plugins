@@ -3,6 +3,6 @@
   "schemaVersion": 1,
   "name": "artem-bb-plugins",
   "plugins": [
-    { "name": "server-list", "source": "./plugins/server-list" }
+    { "name": "server-switcher", "source": "./plugins/server-switcher" }
   ]
 }

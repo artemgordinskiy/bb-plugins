@@ -1,8 +1,8 @@
-// bb-plugin-server-list frontend: a sidebar-footer disclosure listing the
+// bb-plugin-server-switcher frontend: a sidebar-footer disclosure listing the
 // configured bb servers.
 //
 // - Desktop app: switches through the desktop app's own server list
-//   (`window.bbDesktop`, the same undocumented bridge brsbl's
+//   (`window.bbDesktop`, the same undocumented bridge brsbl's unrelated
 //   server-switcher uses). A server missing from that list cannot be added
 //   from here, so its row says to add it in the desktop app first.
 // - Mobile app: its shell sends off-origin navigation to the system browser
@@ -168,7 +168,7 @@ function ServerRow({
   );
 }
 
-function ServerListPanel({ dismiss }: ExperimentalSidebarFooterDisclosureProps) {
+function ServerSwitcherPanel({ dismiss }: ExperimentalSidebarFooterDisclosureProps) {
   const settings = useSettings();
   const [bridge] = useState(desktopBridge);
   const [mobile] = useState(mobileShell);
@@ -237,6 +237,6 @@ export default definePluginApp((app) => {
     id: "servers",
     label: "Servers",
     icon: "ComputerCloud",
-    component: ServerListPanel,
+    component: ServerSwitcherPanel,
   });
 });

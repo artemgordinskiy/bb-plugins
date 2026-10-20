@@ -1,4 +1,4 @@
-// bb-plugin-server-list backend: declares the server list setting. The
+// bb-plugin-server-switcher backend: declares the server list setting. The
 // sidebar disclosure in app.tsx reads it through useSettings().
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
