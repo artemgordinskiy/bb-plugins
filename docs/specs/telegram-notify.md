@@ -1,6 +1,7 @@
 # Telegram Notify: technical spec
 
-Status: draft, 2026-10-20. Not built yet.
+Status: draft, 2026-10-20, revised after a Codex review (15 findings, all
+accepted; see [Review log](#review-log)). Not built yet.
 
 ## Goal
 
@@ -62,7 +63,7 @@ agent ──telegram_notify──▶ plugin (bb server) ──sendMessage──�
                                   └──getUpdates long poll◀────────┘
                                          │ reply_to_message → threadId
                                          ▼
-                             bb.sdk.threads.send(mode: "auto")
+                        bb.sdk.threads.send(mode: "queue-if-active")
 ```
 
 Everything runs in the server entry on the bb coordinator (CT133 for
@@ -73,18 +74,24 @@ Outbound HTTPS to `api.telegram.org` is the only network need.
 
 | Need | Surface |
 | --- | --- |
-| Agent action | `bb.agents.registerTool({ name: "telegram_notify", parameters: zod, execute(args, { threadId, projectId, signal }) })` |
-| Offer it only when usable | `bb.agents.configure(ctx => ({ tools: paired && eligible(ctx) ? ["telegram_notify"] : [] }))` |
-| When to use it | Tool `instructions` (≤4096 chars) plus `skills/telegram-notify/SKILL.md` |
-| Bot token | `bb.settings.define({ botToken: { type: "string", secret: true } })` |
+| Agent action | `bb.agents.registerTool({ name: "telegram_notify", description, instructions, parameters: zod, execute(args, { threadId, projectId, signal }) })` (`description` is required) |
+| Offer it only when usable | `bb.agents.configure(ctx => ({ tools: paired && eligible(ctx) ? ["telegram_notify"] : [], skills: [] }))`; `skills` is required, and a missing array fails closed |
+| When to use it | Tool `instructions` (≤4096 chars) |
+| Settings | `bb.settings.define({ botToken: { type: "string", label: "Bot token", secret: true }, … })`; every setting needs a `label` |
 | Receive replies | `bb.background.service("poller", { start(signal) })` |
-| Deliver a reply | `bb.sdk.threads.send({ threadId, mode: "auto", input: [{ type: "text", text, mentions: [] }] })` |
-| Agent's answer | `bb.events.on("thread.idle", ({ thread, lastAssistantText }))`, `thread.failed` |
+| Deliver a reply | `bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] })` → `{ delivery: "sent" }` or `{ delivery: "queued", queuedMessage }` |
+| Follow a queued reply | `bb.events.on("message.dispatched" \| "message.cancelled", ({ entry }))`, `bb.sdk.threads.queuedMessages.list` |
+| Agent's answer | `bb.events.on("thread.idle", ({ thread, lastAssistantText }))` (text may be `null`), `thread.failed`; `bb.sdk.threads.output` when reconciling |
 | Thread facts | `bb.sdk.threads.get`, `bb.sdk.projects.get` |
 | Link | `bb.server.experimental_appUrl` + `/projects/<projectId>/threads/<threadId>`, the route Telegram Projects uses |
-| State | `bb.storage.kv` (small), `bb.storage.database()` + `migrate` (mappings) |
+| State | `bb.storage.database()` + `migrate`, all of it, so routing state and the offset change in one transaction |
 | CLI | `bb.cli.register(defineCli({ name: "telegram-notify", … }))` |
-| Not configured | `bb.status.needsConfiguration(...)` |
+| Missing or bad token | `bb.status.needsConfiguration(...)`; it clears on the next load, so the fix is `bb plugin reload telegram-notify` |
+
+Event handlers run concurrently and fire-and-forget; events missed while the
+plugin is reloading are not replayed. Every handler below is written to be
+safe under both: state changes are conditional SQL updates, and the poller
+reconciles open exchanges at start.
 
 ## Agent tool
 
@@ -103,12 +110,17 @@ Results, as tool text:
 - `Sent to Telegram.`
 - error `cooldown`: "Sent one for this thread N minutes ago; try again after HH:MM or put it in your reply."
 - error `hourly_limit`: the global cap was hit.
-- error `not_paired` / `bot_error <description>`: delivery failed; nothing was sent.
+- error `not_paired` / `rejected <description>`: Telegram refused it (4xx
+  other than 429) or the bot isn't paired; nothing was sent.
+- error `uncertain`: the request went out but no answer came back (timeout,
+  reset, 5xx). Telegram may have delivered it. "Don't retry; mention it in
+  your reply instead." `sendMessage` has no idempotency key, so the plugin
+  never retries automatically either; a duplicate is worse than a gap.
 
 **Eligibility** (`configure`): the tool is offered only when a bot token and a
-paired chat exist, and to threads with `parentThreadId === null` unless the
-setting `childThreads` is on. Child workers report to their parent; that
-parent can notify. Side chats (`origin.pluginId === "side-chat"`) are excluded.
+paired chat exist, and only to threads with `parentThreadId === null`. Child
+workers report to their parent; that parent can notify. Side chats
+(`origin.pluginId === "side-chat"`) are excluded.
 Resolved tools apply to the next provider session, so pairing reaches running
 threads on their next session, not mid-turn.
 
@@ -130,8 +142,13 @@ threads on their next session, not mid-turn.
   `5` (same values as #5724). Replies forwarded back to Telegram don't count.
 - **Global cap**: `hourlyLimit` setting, default `20` tool sends per rolling
   hour across all threads. A runaway agent can't flood the chat.
-- Both live in the plugin database, so they survive reloads. A failed
-  delivery doesn't consume the cooldown.
+- Both live in the plugin database, so they survive reloads.
+- The check and the reservation are one SQLite transaction: insert the
+  `sends` row, then call Telegram. Concurrent calls can't all pass. A
+  `rejected` send deletes its row; an `uncertain` one keeps it.
+- All outbound Bot API calls (notifications, receipts, answers) go through one
+  serial queue. A 429 pauses the queue for `retry_after` seconds and then
+  retries that call: a 429 is a definite "not sent".
 
 ## Message format
 
@@ -149,9 +166,11 @@ with an inline keyboard button **Open in bb** →
 `{appUrl}/projects/{projectId}/threads/{threadId}`. If `appUrl` is null the
 button is omitted. `link_preview_options: { is_disabled: true }`.
 
-The whole text must fit Telegram's 4096-character limit (after entities
-parsing). The tool's input caps make that true for notifications; answers are
-truncated (below).
+The whole rendered text must fit Telegram's 4096-character limit (after
+entities parsing). Project and thread names are cut to 64 characters each,
+and every field is truncated *before* escaping so an `&amp;` is never split.
+With the tool's caps a notification is at most ~1250 characters. Answers use
+the same HTML mode and the same escaping, and are truncated (below).
 
 ## Replies
 
@@ -162,69 +181,128 @@ The poller calls `getUpdates` with `timeout: 50`,
 
 For each update, in order:
 
-1. Skip if `update_id` is already in `inbound_updates` (dedupe across crashes).
-2. Drop silently unless `message.chat.type === "private"`,
-   `chat.id === owner.chatId` and `from.id === owner.userId`. No reply, so a
-   stranger learns nothing.
-3. `/start <code>` → pairing (below). Other `/` commands → help text.
-4. Not a reply, or replying to a message not in `sent_messages` → hint.
-5. Look up the thread. If it's archived, deleted, or hidden → "That thread is
+1. **Claim it.** In one transaction: `INSERT INTO inbound_updates (update_id,
+   state='claimed')` and advance `offset` past it. If the row already exists,
+   skip the update. From here the update is never replayed, even after a
+   crash.
+2. Drop silently unless `message.chat.type === "private"`. Strangers learn
+   nothing.
+3. `/start <code>` → pairing (below). This runs **before** the owner check,
+   because the first pairing has no owner yet.
+4. Drop silently unless `chat.id === owner.chatId` and
+   `from.id === owner.userId`.
+5. `repliesEnabled` off → "Replies are off." Other `/` commands → help text.
+6. Not a reply, or replying to a message not in `sent_messages` for the
+   current pairing generation → hint.
+7. Look up the thread. If it's archived or deleted → "That thread is
    archived; open bb to continue." and stop.
-6. `threads.send({ threadId, mode: "auto", input: "[Telegram] " + text })`.
-   `auto` steers a live turn and starts one on an idle thread, so the reply
-   reaches the agent at once.
-7. Reply with a short receipt: "→ sent" or, when `delivery` is
-   `queued` (the thread waits on a question or approval), "→ queued: the thread
-   is waiting on a question in bb." Then record `pending_answers` for the thread.
-8. Record the `update_id` with its outcome, then advance the stored offset past it.
+8. Insert an `exchanges` row (`state='submitting'`, current generation,
+   `submitted_at`), mark the update `submitting`, then call
+   `threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text",
+   text: "[Telegram] " + text, mentions: [] }] })`.
+9. On the result, mark the update `submitted` and the exchange `running`
+   (`sent`) or `queued` with `queuedMessage.id` (`queued`). On an error, mark
+   both `failed`.
+10. Queue a receipt through the outbound queue. A failed receipt is logged and
+    never causes a resend.
+
+Receipts, from the send result:
+
+| Result | Receipt |
+| --- | --- |
+| `sent` | "→ sent" |
+| `queued`, `waitingOn.kind` `thread-busy` / `turn-starting` | "→ queued behind the current turn" |
+| `interaction` | "→ queued: the thread is waiting on a question in bb" |
+| `host-offline` / `provisioning` / `stopping` | "→ queued: the machine isn't ready ({hostName})" |
+| `plugin` / `time` | "→ queued: {reason}" |
+| error | "→ not delivered: {short error}; open bb" |
+
+**Uncertain submissions.** If the plugin restarts and finds an update still
+in `submitting`, it doesn't know whether bb took the message. It doesn't
+resend (that could repeat a sudo command). It marks the update `uncertain`
+and sends "Not sure your reply \"{first 40 chars}…\" reached the thread;
+check bb before resending."
 
 Text only in v1: stickers, photos and voice get "Text replies only for now."
 Text over 4000 characters is refused, not truncated.
 
 ### Outbound answer: thread → Telegram
 
-On `thread.idle` for a thread with an unexpired `pending_answers` row:
+The plugin tracks each Telegram reply as an **exchange**:
+`submitting → queued → running → answered`, or `cancelled`, `failed`,
+`expired`, `revoked`. A thread can have several open exchanges (the user
+replied twice); bb runs them in its queue order.
 
-- Take `lastAssistantText`. Replace fenced ```` ```ui ```` and ```` ```app ````
-  blocks with `[interactive card, open in bb]`, since genui cards are
-  unreadable as text. Send it as plain text (escaped), truncated to fit 4096
-  with "… full reply in bb" and the Open button.
-- Send as `reply_parameters: { message_id: <user's message> }`; record the new
-  message in `sent_messages` so replying again continues.
-- Delete the pending row.
+- `message.dispatched` with an `entry.id` matching a `queued` exchange →
+  `running`. `message.cancelled` → `cancelled`, with the reply "Your message
+  was removed from the queue in bb."
+- `thread.idle` → in one statement, claim every `running` exchange for that
+  thread whose `submitted_at` is earlier than `thread.updatedAt`:
+  `UPDATE … SET state='answered' WHERE state='running' AND … RETURNING`. Only
+  the handler that wins the update delivers, so an answer is never sent
+  twice. A `queued` exchange is untouched: the idle answer belongs to the
+  turn ahead of it, not to the user's reply.
+- If bb ran several claimed exchanges in one turn, the answer goes once, as a
+  reply to the newest Telegram message.
+- The answer is `lastAssistantText`. Fenced ```` ```ui ```` and ```` ```app ````
+  blocks become `[interactive card, open in bb]`. `null` or empty becomes
+  "(Finished without a text reply; open bb.)" Truncate to fit 4096 with
+  "… full reply in bb", escape, and send it as
+  `reply_parameters: { message_id: <user's message> }` with the Open button.
+  Record it in `sent_messages` so replying again continues.
+- `thread.failed` → claim the same way, send "The thread stopped with an
+  error; open bb."
+- Exchanges open for 6 hours become `expired` silently, so tomorrow's
+  unrelated turn isn't forwarded.
 
-On `thread.failed`: send "The thread stopped with an error; open bb." and
-delete the row. Rows expire after 6 hours, so an answer from tomorrow's
-unrelated turn isn't forwarded.
+**Reconcile on start.** Events during a reload are lost, so when the poller
+starts, it walks open exchanges:
 
-Only turns started or steered by a Telegram reply are forwarded. Normal
-turns stay in bb.
+- `queued`: if `queuedMessages.list` no longer has the row, treat it as
+  dispatched (`running`).
+- `running`: if `threads.get` says the thread is idle and
+  `updatedAt > submitted_at`, claim and deliver `threads.output`.
+- `submitting`: mark `uncertain` as above.
+
+Only turns started by a Telegram reply are forwarded. Normal turns stay in bb.
 
 ## Pairing and owner identity
 
 - `bb telegram-notify pair` creates a 16-byte random code (base64url, ≤64
-  chars as `/start` allows), stores its SHA-256 and a 10-minute expiry in kv,
+  chars as `/start` allows), stores its SHA-256 and a 10-minute expiry in `state`,
   and prints the `t.me/<bot username>?start=<code>` link. The username comes
   from `getMe`.
 - The first private-chat `/start <code>` that matches stores
-  `owner = { chatId, userId, username, pairedAt }` and deletes the code.
-  Wrong or expired codes are ignored silently.
-- Pairing again replaces the owner and clears `sent_messages` and
-  `pending_answers`, since message ids are per chat. `bb telegram-notify
-  unpair` clears the owner, which removes the tool from future sessions.
-- Changing `botToken` clears the owner, offset and mappings, because message
-  ids belong to a bot.
+  `owner = { chatId, userId, username, pairedAt }`, deletes the code (single
+  use), and bumps the **generation**. Wrong or expired codes are ignored
+  silently.
+- Every `sent_messages` and `exchanges` row carries the generation it was
+  made under. Lookups and deliveries filter on the current one, and inbound
+  step 8 and answer delivery re-read it right before acting.
+- **Revocation** (re-pair, `unpair`, or a `botToken` change seen on reload)
+  bumps the generation in one transaction that also deletes any pairing code
+  and marks open exchanges `revoked`. Nothing is delivered for them. A tool
+  call already past its reservation checks the generation again just before
+  `sendMessage`. A token change also resets the offset, since update and
+  message ids belong to a bot.
+- `unpair` removes the tool from future sessions; sessions already running
+  keep the tool until their next session, but its calls fail `not_paired`.
 
 ## Poller details
 
-- One `getUpdates` consumer per bot token. Telegram answers a second consumer
-  or a set webhook with HTTP 409. On 409 the plugin reports a degraded status
-  ("another bot client is using this token"), backs off to 5 minutes, and does
-  **not** call `deleteWebhook`: it shouldn't break another consumer silently.
-  Use a separate bot per bb server (`bb.artem.cool`, `bb-work`) and never the
-  Telegram Projects bot.
+- One `getUpdates` consumer per bot token. A 409 means a webhook is set or
+  another long poll replaced ours; the two have different descriptions, and
+  the plugin records which. It's a diagnostic, not a guarantee: a short
+  poller elsewhere can take updates without causing one. On 409 the plugin
+  backs off to 5 minutes and does **not** call `deleteWebhook`, so it never
+  silently breaks another consumer. Use a separate bot per bb server
+  (`bb.artem.cool`, `bb-work`) and never the Telegram Projects bot.
+- The SDK has no "degraded" status. Poller health (last success, last error,
+  409 kind, backoff) shows in `bb telegram-notify status` and the plugin log.
+  Only a missing token or a 401 sets `needsConfiguration`, which a reload
+  clears.
 - 429 → wait `parameters.retry_after` seconds. Network errors → capped
-  exponential backoff (1 s → 60 s). 401 → `needs-configuration` (bad token).
+  exponential backoff (1 s → 60 s).
 - The service resolves when `signal` aborts; the in-flight request is aborted
   with it.
 - Updates are kept by Telegram for 24 hours, so a coordinator down longer
@@ -232,34 +310,39 @@ turns stay in bb.
 
 ## Storage
 
-kv:
-
-| Key | Value |
-| --- | --- |
-| `owner` | `{ chatId, userId, username, pairedAt }` |
-| `pairing` | `{ codeSha256, expiresAt }` |
-| `offset` | next `getUpdates` offset |
-
-SQLite (`migrate`, append-only):
+One SQLite database (`bb.storage.database()`, append-only `migrate`). Message
+text isn't stored; only ids, states and times.
 
 ```sql
+CREATE TABLE state (                -- one row each: owner, pairing, offset, generation, bot_id
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL               -- JSON
+);
 CREATE TABLE sent_messages (
-  message_id INTEGER PRIMARY KEY,   -- Telegram message id in the owner chat
+  message_id INTEGER NOT NULL,      -- Telegram message id in the owner chat
+  generation INTEGER NOT NULL,
   thread_id TEXT NOT NULL,
   project_id TEXT NOT NULL,
   kind TEXT NOT NULL,               -- 'notify' | 'answer'
-  sent_at INTEGER NOT NULL
+  sent_at INTEGER NOT NULL,
+  PRIMARY KEY (generation, message_id)
 );
 CREATE TABLE inbound_updates (
   update_id INTEGER PRIMARY KEY,
-  outcome TEXT NOT NULL,
+  state TEXT NOT NULL,              -- claimed | submitting | submitted | uncertain | failed | ignored
   at INTEGER NOT NULL
 );
-CREATE TABLE pending_answers (
-  thread_id TEXT PRIMARY KEY,
-  reply_to_message_id INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
+CREATE TABLE exchanges (
+  id INTEGER PRIMARY KEY,
+  generation INTEGER NOT NULL,
+  thread_id TEXT NOT NULL,
+  update_id INTEGER NOT NULL,
+  user_message_id INTEGER NOT NULL, -- the Telegram message to reply to
+  queued_message_id TEXT,           -- bb queued row, when queued
+  state TEXT NOT NULL,
+  submitted_at INTEGER NOT NULL
 );
+CREATE INDEX exchanges_open ON exchanges (thread_id, state);
 CREATE TABLE sends (                -- cooldown and hourly cap
   thread_id TEXT NOT NULL,
   at INTEGER NOT NULL
@@ -267,19 +350,20 @@ CREATE TABLE sends (                -- cooldown and hourly cap
 ```
 
 A daily `bb.background.schedule` deletes `sent_messages` older than 30 days,
-`inbound_updates` older than 2 days and expired `pending_answers`. Replying
-to a notification older than 30 days gets the "not a notification" hint.
-
-Message text isn't stored; only ids and times.
+`inbound_updates` older than 2 days, closed exchanges older than 2 days, and
+expires open ones past 6 hours. Replying to a notification older than 30 days
+gets the "not a notification" hint.
 
 ## Settings
+
+All settings carry a `label`. Changing `botToken` takes effect on
+`bb plugin reload telegram-notify`.
 
 | Key | Type | Default |
 | --- | --- | --- |
 | `botToken` | secret string | — |
 | `cooldownMinutes` | select `0,1,5,15,60` | `5` |
 | `hourlyLimit` | number 1–100 | `20` |
-| `childThreads` | boolean | `false` |
 | `repliesEnabled` | boolean | `true`; off = outbound only, inbound gets "Replies are off." |
 
 ## CLI
@@ -289,11 +373,13 @@ bb telegram-notify status [--json]      token set, bot username, paired chat, po
 bb telegram-notify pair                 print a pairing link (10 min)
 bb telegram-notify unpair
 bb telegram-notify send --title <t> (--message <m> | --message-stdin) [--thread <id>] [--silent] [--json]
-bb telegram-notify test                 send a labeled test message
 ```
 
 `send` uses the invoking thread when `--thread` is omitted, with the same
-limits as the tool, so scripts and automations can notify too.
+limits as the tool, so scripts and automations can notify too. It doubles as
+the setup test. bb's plugin CLI accepts exactly one non-empty stdin line
+(≤16 KiB) for `--message-stdin`, so `send` turns a literal `\n` into a
+newline for multi-line messages.
 
 ## Security
 
@@ -304,12 +390,16 @@ route **from the internet**, so:
 
 - Inbound accepts only the paired user in the paired private chat. Group
   chats, channels and other users are dropped without reply.
-- Inbound can only reach threads the plugin notified about. It can't create
-  threads, run commands, approve permissions, or answer bb questions in v1.
+- Inbound can only reach threads the plugin notified about, under the
+  current pairing. It can't create threads, run commands, approve
+  permissions, or answer bb questions in v1.
+- No Telegram message is ever submitted to bb twice. An update is claimed
+  before submission, and an unclear outcome is reported, not retried.
+- Answers go only to the exchange that asked, and never after revocation.
 - `repliesEnabled = false` gives a send-only bot.
 - Whoever holds the bot token can send as the bot and consume its updates
-  (the poller then sees 409), but can't send messages as the owner, so they
-  can't pass the owner check (Telegram sets `from.id`). Anyone who gets into the user's Telegram account can steer
+  (maybe without the poller noticing), but can't send messages as the owner,
+  so they can't pass the owner check (Telegram sets `from.id`). Anyone who gets into the user's Telegram account can steer
   agents; the user should have Telegram two-step verification on.
 - The token is a secret setting (0600 file on the coordinator, never sent to
   the frontend or agents). It never appears in logs or CLI output; error
@@ -323,22 +413,31 @@ route **from the internet**, so:
 ## Testing
 
 `@get-bb/plugin-sdk/testing` (`createFakePluginHost`) with an injected
-`fetch` standing in for the Bot API (the only mock):
+`fetch` for the Bot API. The fake host doesn't implement thread delivery, so
+`threads.send`, `threads.get`, `threads.output` and `queuedMessages.list` are
+stubbed explicitly. Its events arrive one at a time, so the race tests call
+the store functions directly with interleaved steps.
 
-- Tool: offered only when paired and eligible; validation; cooldown and
-  hourly cap; HTML escaping of hostile titles; length limits.
-- Pairing: valid, wrong, expired code; token change clears state.
-- Inbound: owner gate (other user, group chat), dedupe on repeated
-  `update_id`, unknown reply target, archived thread, `sent` vs `queued`
-  receipt, offset advances only after recording.
-- Answer: forwarded once after a Telegram reply, not after normal turns,
-  ui-block stripping, truncation, expiry, failure notice.
-- Poller: 409 degrades without `deleteWebhook`, 429 honors `retry_after`,
-  abort ends the service.
+- Tool: offered only when paired and top-level; validation; cooldown and
+  hourly cap under concurrent calls; `rejected` vs `uncertain`; HTML escaping
+  of hostile titles; length budget with long project and thread names.
+- Pairing: first pairing with no owner; wrong, expired, reused code;
+  revocation drops open exchanges and old reply targets.
+- Inbound: owner gate (other user, group chat), repeated `update_id`,
+  unknown reply target, archived thread, each receipt kind, a receipt that
+  fails without resubmitting, a crash between claim and submit (→ uncertain).
+- Answer: forwarded once after a Telegram reply, not after normal turns; a
+  queued reply isn't answered by the turn ahead of it; two replies batched
+  into one turn; two handlers racing on one idle; `null` text; ui-block
+  stripping; truncation; expiry; failure notice; cancelled queued row.
+- Reconcile: reload while queued, while running, and after the thread went
+  idle.
+- Poller: both 409 kinds back off without `deleteWebhook`, 429 honors
+  `retry_after`, abort ends the service.
 
 Live, on `bb.artem.cool` with a test bot: pair, notify from a thread, reply
-while it's idle and while it's running, reply to the answer, reload the
-plugin mid-poll.
+while it's idle and while it's running, reply twice quickly, reply to the
+answer, reload the plugin mid-turn.
 
 ## Rollout
 
@@ -358,10 +457,42 @@ plugin mid-poll.
 - Answering bb questions and approvals from Telegram (buttons).
 - Starting new threads from Telegram.
 - Routing a non-reply message to "the last notified thread".
+- Child threads using the tool (no setting; revisit if needed).
+- Summarized answers.
 
-## Open questions
+## Decisions
 
-1. Is `auto` right for a reply to a busy thread, or should it queue
-   (`queue-if-active`) so it doesn't redirect the running turn?
-2. Should child threads be eligible by default?
-3. Should the answer forward the whole reply (truncated) or a summary?
+The three open questions from the first draft, settled with the review:
+
+1. **Busy thread → `queue-if-active`**, not `auto`. `auto` joins the running
+   turn and can redirect work in progress. Queuing keeps the turn intact, and
+   the exchange states above make queued replies get the right answer.
+2. **Child threads excluded**, with no setting in v0.1. The parent owns
+   notifications and follow-up.
+3. **Forward the real answer, truncated.** A generated summary adds cost,
+   latency and another failure path, and can drop the agent's caveats or its
+   question.
+
+## Review log
+
+Codex (bb thread `thr_4k7u6j474q`, 2026-10-20) checked the first draft
+against `get-bb/bb` `desktop-v0.46.1` and the Bot API. Accepted and folded in
+above:
+
+| # | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| 1 | High | A crash or failed receipt could resubmit a reply | Claim the update before submitting; uncertain → report, never replay |
+| 2 | High | Thread-level pending row could forward an unrelated answer | Exchange states, queued-row tracking, atomic claim |
+| 3 | Medium | Revocation left codes and in-flight work live | Pairing generation on every row, rechecked before acting |
+| 4 | Medium | Owner gate ran before `/start`, so first pairing failed | `/start` before the owner check |
+| 5 | Medium | Incomplete SDK examples (`skills`, `label`, `description`) | Completed |
+| 6 | Medium | `input` was a string; `queued` isn't only "waiting on a question" | Prompt-block array; receipts from `waitingOn` |
+| 7 | Medium | Events lost during reload | Reconcile open exchanges at start |
+| 8 | Medium | Network failure ≠ not sent | `rejected` vs `uncertain`, no auto-retry |
+| 9 | Medium | Limits raced; receipts and answers ignored 429 | Atomic reservation, one serial outbound queue |
+| 10 | Medium | No public "degraded" status | Health in CLI and log; `needsConfiguration` only for token problems |
+| 11 | Medium | 409 overstated as compromise detection | Reworded as a diagnostic |
+| 12 | Medium | Length budget missed names; `null` text; parse mode unclear | Name caps, truncate before escape, HTML throughout, empty fallback |
+| 13 | Low | Fake host lacks thread delivery and concurrency | Explicit stubs, direct race tests |
+| 14 | Low | `--message-stdin` takes one line | Documented; `\n` escapes |
+| 15 | Low | kv + SQLite split prevents one transaction; v0.1 too big | Everything in SQLite; dropped `childThreads` and `test` |
