@@ -3,7 +3,7 @@ import test from "node:test";
 import type { ChatBook } from "./chats.ts";
 import type { ChatList } from "./contract.ts";
 import { setup } from "./server.ts";
-import { FakeTelegram, TOKEN, boot, configContext, fail, hang, network, ok, until, withPlugin } from "./test-support.ts";
+import { FakeTelegram, TOKEN, boot, configContext, cutOff, fail, garbled, hang, network, ok, until, withPlugin } from "./test-support.ts";
 
 const HOME = "-1001000000001";
 const ADMIN = "-1001000000002";
@@ -280,4 +280,17 @@ test("the token never appears in logs, RPC results or errors", async () => {
     seen.push(JSON.stringify(harness.logEntries));
     for (const text of seen) assert.ok(!text.includes(TOKEN) && !text.includes("FAKE-token"), text);
   });
+});
+
+test("a 2xx with an unreadable body is no answer: the chat is unknown, not invalid", async () => {
+  for (const [what, reply] of [["not JSON", garbled()], ["cut off", cutOff()]] as const) {
+    const tg = new FakeTelegram().addGroup(-1001000000001);
+    tg.on("getChat", () => reply);
+    await withPlugin({ tg }, async ({ harness, sleeper, save }) => {
+      await save([{ name: "Home", chatId: HOME }]);
+      await until(() => sleeper.requested.length === 1, "backoff");
+      const list = (await harness.callRpc("listChats", null)) as ChatList;
+      assert.equal(list.chats[0]?.status, "unknown", what);
+    });
+  }
 });

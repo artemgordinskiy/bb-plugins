@@ -71,6 +71,16 @@ export async function callApi<T>(
     payload = undefined;
   }
   const data = isRecord(payload) ? payload : {};
+  if (response.ok && !isRecord(payload)) {
+    // A 2xx whose body can't be read (cut off by the timeout, or a proxy's
+    // non-JSON page) is no answer: the request may well have been processed.
+    return {
+      ok: false,
+      errorCode: null,
+      description: "Telegram answered but the response could not be read",
+      network: true,
+    };
+  }
   if (response.ok && data.ok === true) {
     return { ok: true, result: data.result as T };
   }

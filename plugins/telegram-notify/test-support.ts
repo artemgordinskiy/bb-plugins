@@ -11,6 +11,8 @@ export type Reply =
   | { kind: "ok"; result: unknown }
   | { kind: "error"; code: number; description: string; parameters?: Record<string, unknown> }
   | { kind: "network" }
+  /** A 2xx whose body isn't JSON, or is cut off mid-stream. */
+  | { kind: "unreadable"; cutOff: boolean }
   | { kind: "hang" };
 
 export const ok = (result: unknown = true): Reply => ({ kind: "ok", result });
@@ -21,6 +23,8 @@ export const fail = (code: number, description: string, parameters?: Record<stri
   ...(parameters ? { parameters } : {}),
 });
 export const network = (): Reply => ({ kind: "network" });
+export const garbled = (): Reply => ({ kind: "unreadable", cutOff: false });
+export const cutOff = (): Reply => ({ kind: "unreadable", cutOff: true });
 export const hang = (): Reply => ({ kind: "hang" });
 
 export interface FakeChat {
@@ -117,6 +121,17 @@ export class FakeTelegram {
       case "network":
         // fetch errors may quote the URL, including the token; the plugin must not pass that on.
         throw new TypeError(`fetch failed: ${url}`);
+      case "unreadable":
+        if (!reply.cutOff) return new Response("<html>502 from a proxy</html>", { status: 200 });
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"ok":tr'));
+              controller.error(new TypeError("terminated"));
+            },
+          }),
+          { status: 200 },
+        );
       case "hang":
         return new Promise<Response>((_, reject) => {
           init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });

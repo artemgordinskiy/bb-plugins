@@ -5,7 +5,9 @@ import { buildInstructions } from "./notify.ts";
 import {
   FakeTelegram,
   configContext,
+  cutOff,
   fail,
+  garbled,
   hang,
   network,
   ok,
@@ -237,6 +239,8 @@ test("uncertain: no answer, a 5xx or a timeout may have been delivered, so it is
     ["a network error", network()],
     ["a 502", fail(502, "Bad Gateway")],
     ["a timeout", hang()],
+    ["a 200 that isn't JSON", garbled()],
+    ["a 200 cut off mid-body", cutOff()],
   ] as const) {
     const tg = new FakeTelegram();
     await ready({ tg, timeoutMs: 20 }, async (plugin) => {

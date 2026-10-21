@@ -261,6 +261,7 @@ function TelegramChats() {
                       aria-invalid={invalid}
                       maxLength={NAME_MAX * 2}
                       value={row.name}
+                      disabled={saving}
                       onChange={(event) => edit(row.key, "name", event.target.value)}
                     />
                   </TableCell>
@@ -270,6 +271,7 @@ function TelegramChats() {
                       aria-invalid={invalid}
                       inputMode="numeric"
                       value={row.chatId}
+                      disabled={saving}
                       onChange={(event) => edit(row.key, "chatId", event.target.value)}
                     />
                   </TableCell>
@@ -280,6 +282,7 @@ function TelegramChats() {
                       maxLength={USE_MAX * 2}
                       placeholder="Optional"
                       value={row.use}
+                      disabled={saving}
                       onChange={(event) => edit(row.key, "use", event.target.value)}
                     />
                   </TableCell>
@@ -297,6 +300,7 @@ function TelegramChats() {
                             className="mt-1"
                             size="sm"
                             variant="outline"
+                            disabled={saving}
                             onClick={() => change((current) => useNewId(current, row.key))}
                           >
                             Use new ID
@@ -311,7 +315,7 @@ function TelegramChats() {
                         size="sm"
                         variant="outline"
                         aria-label={`Check ${label}`}
-                        disabled={checking.has(row.key)}
+                        disabled={saving || checking.has(row.key)}
                         onClick={() => void check(row)}
                       >
                         Check
@@ -320,7 +324,7 @@ function TelegramChats() {
                         size="sm"
                         variant="ghost"
                         aria-label={`Move ${label} up`}
-                        disabled={index === 0}
+                        disabled={saving || index === 0}
                         onClick={() => change((current) => moveRow(current, index, -1))}
                       >
                         Up
@@ -329,7 +333,7 @@ function TelegramChats() {
                         size="sm"
                         variant="ghost"
                         aria-label={`Move ${label} down`}
-                        disabled={index === rows.length - 1}
+                        disabled={saving || index === rows.length - 1}
                         onClick={() => change((current) => moveRow(current, index, 1))}
                       >
                         Down
@@ -338,6 +342,7 @@ function TelegramChats() {
                         size="sm"
                         variant="ghost"
                         aria-label={`Remove ${label}`}
+                        disabled={saving}
                         onClick={() => change((current) => current.filter((entry) => entry.key !== row.key))}
                       >
                         Remove
@@ -355,12 +360,12 @@ function TelegramChats() {
         <Button
           size="sm"
           variant="outline"
-          disabled={full}
+          disabled={saving || full}
           onClick={() => change((current) => addBlankRow(current, counter.current))}
         >
           Add chat
         </Button>
-        <Button size="sm" variant="outline" disabled={finding || !tokenSet} onClick={() => void findGroups()}>
+        <Button size="sm" variant="outline" disabled={saving || finding || !tokenSet} onClick={() => void findGroups()}>
           {finding ? "Looking…" : "Find groups"}
         </Button>
         <Button size="sm" disabled={saving} onClick={() => void save()}>
@@ -373,7 +378,8 @@ function TelegramChats() {
         <div className="space-y-2 rounded-md border border-border/60 p-3">
           {found.groups.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No groups found. Add the bot to a group, send a message there, then try again.
+              No groups found. Remove the bot from the group, add it again, then press Find groups, or enter the
+              chat ID by hand.
             </p>
           ) : (
             <ul className="space-y-1">
@@ -386,6 +392,7 @@ function TelegramChats() {
                     size="sm"
                     variant="outline"
                     aria-label={`Add ${group.title}`}
+                    disabled={saving}
                     onClick={() => addGroup(group)}
                   >
                     Add
@@ -396,8 +403,8 @@ function TelegramChats() {
           )}
           {found.maybeIncomplete && (
             <p className="text-xs text-muted-foreground">
-              This list may be incomplete: Telegram only keeps recent activity. Send a message in the group and try
-              again, or enter its ID by hand.
+              This list may be incomplete: Telegram returned its maximum of 100 recent updates. If a group is missing,
+              remove the bot from it, add it again and press Find groups, or enter the chat ID by hand.
             </p>
           )}
         </div>

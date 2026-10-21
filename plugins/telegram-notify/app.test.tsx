@@ -187,7 +187,53 @@ describe("Chats section", () => {
   it("says what to do when no group is found", async () => {
     const slot = mount();
     fireEvent.click(await slot.findByRole("button", { name: "Find groups" }));
-    expect(await slot.findByText(/No groups found/)).toBeTruthy();
+    expect((await slot.findByText(/No groups found/)).textContent).toMatch(
+      /Remove the bot from the group, add it again, then press Find groups, or enter the chat ID by hand/,
+    );
+    expect(slot.container.textContent).not.toMatch(/send a message/i);
+  });
+
+  it("explains a possibly incomplete list without asking for a message", async () => {
+    const slot = mount({
+      findGroups: () => ({
+        groups: [{ chatId: "-1001000000003", title: "Family chat", type: "supergroup" }],
+        maybeIncomplete: true,
+      }),
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Find groups" }));
+    const note = await slot.findByText(/may be incomplete/);
+    expect(note.textContent).toMatch(/maximum of 100/);
+    expect(note.textContent).toMatch(/remove the bot from it, add it again and press Find groups/);
+    expect(note.textContent).toMatch(/enter the chat ID by hand/);
+    expect(note.textContent).not.toMatch(/send a message/i);
+  });
+
+  it("locks the table while a save is in flight, so nothing typed can be lost", async () => {
+    let finish: (value: unknown) => void = () => {};
+    const slot = mount({
+      saveChats: () => new Promise((resolve) => (finish = resolve)),
+    });
+    const name = (await slot.findByLabelText("Name of Home")) as HTMLInputElement;
+    fireEvent.click(slot.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(name.disabled).toBe(true));
+    const locked = [
+      "Chat ID of Home",
+      "When to use Home",
+      "Check Home",
+      "Move Home down",
+      "Remove Home",
+    ];
+    for (const label of locked) {
+      const control = slot.getByLabelText(label, { selector: "input, button" }) as HTMLInputElement;
+      expect(control.disabled, label).toBe(true);
+    }
+    expect((slot.getByRole("button", { name: "Add chat" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((slot.getByRole("button", { name: "Find groups" }) as HTMLButtonElement).disabled).toBe(true);
+
+    finish({ ok: true, list: { tokenSet: true, chats: [home, work] } });
+    expect((await slot.findByRole("status")).textContent).toBe("Saved.");
+    expect((slot.getByLabelText("Name of Home") as HTMLInputElement).disabled).toBe(false);
+    expect((slot.getByRole("button", { name: "Add chat" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("Use new ID fills the migrated ID and only saving applies it", async () => {
