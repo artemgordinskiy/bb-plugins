@@ -20,7 +20,8 @@
     },
     "noEmit": true,
     "skipLibCheck": false,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
   },
   "include": [
     "*.ts",
