@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-telegram-notify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lets agents send you a Telegram message when something is worth it, with a link back to the bb thread.",
   "license": "MIT",
   "type": "module",
@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.3.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -36,7 +37,6 @@
     "@radix-ui/react-navigation-menu": "^1.2.18",
     "@radix-ui/react-popover": "^1.1.19",
     "@radix-ui/react-select": "^2.3.3",
-    "@radix-ui/react-slot": "^1.3.0",
     "@radix-ui/react-tooltip": "^1.2.12",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
