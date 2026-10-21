@@ -36,6 +36,28 @@
           "tagPrefix": "typography/"
         }
       }
+    },
+    {
+      "id": "telegram-notify",
+      "displayName": "Telegram Notify",
+      "description": "Gives agents a tool that sends you a Telegram message with a link back to the thread, with per-thread and hourly limits.",
+      "icon": "BellDot",
+      "tags": [
+        "notifications",
+        "telegram"
+      ],
+      "author": {
+        "name": "Artem Gordinskiy",
+        "github": "artemgordinskiy"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/artemgordinskiy/bb-plugins.git",
+          "subdir": "plugins/telegram-notify",
+          "range": "^0.1.0",
+          "tagPrefix": "telegram-notify/"
+        }
+      }
     }
   ]
 }
