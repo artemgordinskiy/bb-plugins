@@ -1,6 +1,6 @@
 # Telegram Notify: technical spec
 
-Status: draft v2.2, 2026-10-21. Not built yet. One-way only; chats are
+Status: draft v2.3, 2026-10-21. Not built yet. One-way only; chats are
 managed in the plugin's own settings section (see [History](#history)).
 
 ## Goal
@@ -57,16 +57,15 @@ without a code change.
 3. Below the token, the plugin's **Chats** section lists where agents may
    post:
 
-   | Name | When to use | Shared | Status |
-   | --- | --- | --- | --- |
-   | Home Admin (default) | infrastructure, reports, blockers | | ✓ ready |
-   | Home | household matters only | ✓ | ✓ ready |
+   | Name | When to use | Status |
+   | --- | --- | --- |
+   | Home Admin (default) | infrastructure, reports, blockers | ✓ ready |
+   | Home | household matters only | ✓ ready |
 
    **Find groups** lists the groups the bot was added to in the last 24 hours;
    picking one fills in its ID and title. **Add** takes a chat ID by hand (the
    same IDs Grafana's contact points use). Each row has a name, a "when to
-   use" note for the agent, a **Shared** box for groups other people read,
-   and a live check. Rows can be reordered; the first is the default. Saving
+   use" note for the agent, and a live check. Rows can be reordered; the first is the default. Saving
    needs no reload.
 4. An agent calls `telegram_notify`. Home Admin gets:
 
@@ -149,12 +148,9 @@ Each chat has:
 | `name` | 1–32 chars, one line, unique ignoring case; what the agent passes as `chat` |
 | `chatId` | integer; groups are negative |
 | `use` | 0–120 chars, one line; shown to the agent as "when to use" |
-| `shared` | boolean; the group is read by people other than the user |
 | position | order in the table; the first chat is the default |
 
 - At most **10 chats**, to keep the agent's instructions short.
-- The default (first) chat **can't be shared**: a call without `chat` must
-  never land in a group other people read.
 - The same `chatId` can't appear twice.
 - Saving validates the whole list in one transaction and replaces it; the
   section shows the first error and keeps the user's edits. A save applies to
@@ -225,8 +221,8 @@ on the server; none returns the token or raw Bot API responses.
 
 | Method | Input | Output |
 | --- | --- | --- |
-| `listChats` | `null` | `{ tokenSet, chats: [{ name, chatId, use, shared, status, reason? }] }` |
-| `saveChats` | `{ chats: [{ name, chatId, use, shared }] }` (in order) | the new `listChats` result, or `{ ok: false, error }` naming the bad row |
+| `listChats` | `null` | `{ tokenSet, chats: [{ name, chatId, use, status, reason? }] }` |
+| `saveChats` | `{ chats: [{ name, chatId, use }] }` (in order) | the new `listChats` result, or `{ ok: false, error }` naming the bad row |
 | `checkChat` | `{ chatId }` | `{ status, reason?, title? }` |
 | `findGroups` | `null` | `{ groups: [{ chatId, title, type }], maybeIncomplete }` |
 
@@ -289,10 +285,9 @@ user text, so they're inserted as one-line plain text, not markup):
 
 > Telegram chats (pass the name as `chat`; omit it for the first):
 > - Home Admin: infrastructure, reports, blockers
-> - Home (shared, other people read it): household matters only
+> - Home: household matters only
 >
-> Only use a shared chat for what its note says, and never put
-> infrastructure details or anything private about the user in it.
+> Only post to a chat what its note says it's for.
 
 It returns `null` when the tool isn't offered.
 
@@ -321,10 +316,9 @@ entity is never split:
 <i>{project name} · {thread title}</i>
 ```
 
-Shared chats get no footer: project and thread names can say things about the
-infrastructure or the user that the agent never chose to share with others.
-The agent's `title` and `message` are the only text, and the button still
-opens the thread.
+Every chat gets the same format, footer included. The footer shows the
+project and thread names to everyone in the group, so a thread titled after
+something private shows up in Home too if an agent posts there.
 
 Project and thread names are cut to 64 characters, so a message stays under
 ~1250 characters, well inside Telegram's 4096. An inline keyboard button
@@ -341,7 +335,6 @@ CREATE TABLE chats (
   name TEXT NOT NULL PRIMARY KEY COLLATE NOCASE,
   chat_id INTEGER NOT NULL UNIQUE,
   use TEXT NOT NULL DEFAULT '',
-  shared INTEGER NOT NULL DEFAULT 0,
   position INTEGER NOT NULL UNIQUE  -- 0 = default
 );
 
@@ -380,14 +373,14 @@ only; they're recomputed after every load.
   leaked token is revoked in @BotFather and replaced in settings.
 - The token never appears in logs, tool results, RPC results or errors. Bot
   API errors are logged without the request URL, which contains the token.
-- **The default chat can't be shared**, and shared chats get no footer, so
-  an agent that forgets `chat` never posts to the household.
+- A call without `chat` goes to the first chat, so keep the one only the
+  user reads (Home Admin) at the top.
 - Chat IDs aren't secret, but they stay out of Git like the token. Chat names
   and notes reach agents' instructions; the section says so.
 - Outbound text leaves the homelab for Telegram's servers and is readable by
-  every member of the target group. The instructions forbid secrets and keep
-  private details out of shared chats; the plugin doesn't try to detect
-  secrets.
+  every member of the target group, footer included. The instructions forbid
+  secrets and point the agent at each chat's note; the plugin doesn't try to
+  detect secrets.
 - The link exposes the `bb.artem.cool` hostname and thread IDs to Telegram
   and to group members. Off the home IP, the URL still needs a Cloudflare
   Access email login, so it alone gives no access. Link previews stay off so
@@ -405,8 +398,7 @@ only; they're recomputed after every load.
   ID; bot not a member; bot restricted from posting; network failure →
   `unknown` and re-check, no status; one invalid chat leaves the others
   working; no chats → tool not offered, no status.
-- `saveChats`: duplicate names (any case) and IDs, more than 10, shared
-  default, bad IDs, over-long fields; a failed save changes nothing; a good
+- `saveChats`: duplicate names (any case) and IDs, more than 10, bad IDs, over-long fields; a failed save changes nothing; a good
   save updates the tool and instructions without a reload.
 - `findGroups`: added/removed/re-added sequences keep the latest state;
   channels, private chats and already-listed groups dropped; message updates
@@ -416,18 +408,16 @@ only; they're recomputed after every load.
   refused; cooldown and hourly cap across chats under concurrent calls;
   `rejected` vs `uncertain`; 429 → `rate_limited` and the reservation
   released; `migrate_to_chat_id` on send; HTML escaping of hostile titles;
-  length budget with long names; no footer in a shared chat even with a
-  sensitive thread title; no button without `appUrl`.
-- Instructions: shared chats marked; names and notes with markup or newlines
+  length budget with long names; no button without `appUrl`.
+- Instructions: names and notes with markup or newlines
   stay one plain line each; `null` when not offered.
-- App: the section renders statuses, blocks saving a shared default, keeps
+- App: the section renders statuses, keeps
   edits after a failed save, and fills a row from **Find groups**; RPC is
   faked.
 
 Live, on `bb.artem.cool`: add Home Admin with **Find groups**, send one
 message from a thread, tap the link on the phone at home and away (Access
-login), check the cooldown message, then add Home as shared and confirm it
-gets no footer.
+login), check the cooldown message, then add Home and send one there.
 
 ## Rollout
 
@@ -439,8 +429,8 @@ gets no footer.
    (and Home if wanted) as an ordinary member.
 4. Install on `bb.artem.cool`; the user pastes the token and reloads.
 5. In the Chats section, **Find groups** (or the IDs from Grafana's
-   `Telegram admin` / `Telegram` contact points); Home Admin first, Home
-   marked shared. Chat IDs and the token stay out of Git.
+   `Telegram admin` / `Telegram` contact points); Home Admin first, then
+   Home. Chat IDs and the token stay out of Git.
 6. Live-test. Record it in homelab `applications/bb/README.md` next to the
    other Telegram senders.
 7. Optionally set `push-notifications` `defaultLevel` to `input-only`, so
@@ -472,8 +462,11 @@ gets no footer.
   token can read what the bot sees, so privacy mode on and no admin; temporary
   check failures retry instead of needing a reload; 429 returns
   `rate_limited` instead of waiting; a bad Home ID doesn't disable Admin.
-- **v2.2 (this)**: the user chose the plugin's own settings section over two
+- **v2.2**: the user chose the plugin's own settings section over two
   fixed chat settings or a multiline text setting. Any number of named chats
   (up to 10) with a "when to use" note and a **Shared** flag, which
   generalizes v2.1's Home rules; **Find groups** replaces looking up IDs;
-  chat edits need no reload. Not reviewed yet.
+  chat edits need no reload.
+- **v2.3 (this)**: the user dropped the Shared flag. Every chat is treated
+  the same, footer included; the "when to use" note and the order (first =
+  default) are the only per-chat rules. Not reviewed yet.
