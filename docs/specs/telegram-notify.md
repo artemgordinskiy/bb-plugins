@@ -1,6 +1,6 @@
 # Telegram Notify: technical spec
 
-Status: draft v2.3, 2026-10-21. Not built yet. One-way only; chats are
+Status: draft v2.4, 2026-10-21. Not built yet. One-way only; chats are
 managed in the plugin's own settings section (see [History](#history)).
 
 ## Goal
@@ -103,11 +103,11 @@ The bot calls `getUpdates` only when the user presses **Find groups** (see
 | Need | Surface |
 | --- | --- |
 | Agent action | `bb.agents.registerTool({ name: "telegram_notify", description, instructions, parameters: zod, execute(args, { threadId, projectId, signal }) })` |
-| Offer it only when usable | `bb.agents.configure(ctx => ({ tools: hasReadyChat && eligible(ctx) ? ["telegram_notify"] : [], skills: [] }))`; `skills` is required |
-| List the chats for the agent | `bb.agents.contributeInstructions(ctx => text)` |
+| Offer it only when usable, and list the chats | `bb.agents.configure(ctx => usable(ctx) ? { tools: ["telegram_notify"], skills: [], instructions: chatList() } : { tools: [], skills: [] })`; `skills` is required, `instructions` is cut at 4096 chars |
 | Token, limits | `bb.settings.define({ … })`; every setting needs a `label` |
 | Chats section | app entry: `definePluginApp(app => app.slots.settingsSection({ id: "chats", title: "Chats", component }))`; shown on the plugin page below the settings form, also while the plugin needs configuration |
 | Section ↔ server | `bb.rpc.register(defineRpcContract({ … }), handlers)` on the server, `useRpc<typeof contract>()` in the app |
+| Live statuses | `bb.realtime.publish("chats", {})` on the server, `useRealtime` in the section, as `concurrency-limit` does |
 | Section UI | vendored shadcn parts under `components/ui/` (table, input, button, checkbox), as `plugins/server-switcher` does |
 | Thread facts | `bb.sdk.threads.get`, `bb.sdk.projects.get` |
 | Link | `bb.server.experimental_appUrl` + `/projects/<projectId>/threads/<threadId>`, the route Telegram Projects uses |
@@ -115,8 +115,7 @@ The bot calls `getUpdates` only when the user presses **Find groups** (see
 | Background re-checks | `bb.background.service("check", { start(signal) })` |
 | Missing token / no usable chat | `bb.status.needsConfiguration(...)`; a status only, the plugin keeps running; clears on the next load |
 
-`configure` and `contributeInstructions` are synchronous, so the server keeps
-the chat list and each chat's status in memory: loaded from the database at
+`configure` is synchronous, so the server keeps the chat list and each chat's status in memory: loaded from the database at
 start, replaced on every save or check.
 
 `package.json`:
@@ -165,17 +164,21 @@ timeout:
 1. `getMe`: the token works; remember the bot's user id (once per check
    round, not per chat).
 2. `getChat`: the type is `group` or `supergroup` and not a forum. Channels
-   and private chats are refused.
-3. `getChatMember(chat, botId)`: the bot is `member` or `administrator`, or
-   `restricted` with `can_send_messages`. Ordinary membership is enough; the
-   bot should **not** be an admin (see [Security](#security)).
+   and private chats are refused. Keep its `permissions` for step 3.
+3. `getChatMember(chat, botId)`: the bot can post text if it is
+   `administrator`; or `member` and the group's default
+   `permissions.can_send_messages` is true; or `restricted` with
+   `is_member` and `can_send_messages` both true. `left` and `kicked` can't.
+   Ordinary membership is enough; the bot should **not** be an admin (see
+   [Security](#security)).
 
 A check runs for every chat after load (in the `check` service, so it can't
 hit bb's 30-second load limit), for a changed or added chat on save, and for
 one chat on the section's **Check** button. Each chat ends up `ready`,
 `invalid` or `unknown`, and the section shows it with a plain reason:
 
-- **invalid** (chat not found, wrong type, not a member, can't post): that
+- **invalid** (chat not found, wrong type, not a member, members can't
+  post, bot restricted): that
   chat is refused by the tool with the same reason; the other chats keep
   working. Fixing it means editing the chat or the group, then **Check**.
 - **unknown** (network error, timeout, 5xx, 429): temporary. The chat is
@@ -189,10 +192,17 @@ isn't offered. No status is set for `unknown`.
 
 Telegram reports a group that became a supergroup only when the bot tries
 to post, so `sendMessage` handles `parameters.migrate_to_chat_id` too: the
-send is `rejected` with "Home Admin moved to a new chat ID; update it in
-Settings → Plugins → Telegram Notify". The chat is marked `invalid` and the
-section offers **Use new ID** with the ID Telegram returned; the plugin
-never changes a chat on its own.
+send is `rejected` with "Home Admin moved to chat ID {new id}; update it in
+Settings → Plugins → Telegram Notify". The chat is marked `invalid`, the new
+ID is kept in the in-memory status as `migrateToChatId`, and the section
+offers **Use new ID**, which fills it into the row; it takes effect only when
+the user saves. The plugin never changes a chat on its own.
+
+Statuses change outside the section too (background re-checks, a send that
+finds a migration). On every change the server calls
+`bb.realtime.publish("chats", {})`; the section listens with `useRealtime`,
+calls `listChats` again and updates only the status column, so unsaved edits
+survive.
 
 ### Find groups
 
@@ -200,8 +210,9 @@ The user presses **Find groups** to avoid looking up chat IDs:
 
 1. The server calls `getUpdates` once with `timeout: 0` and no `offset`, so
    nothing is confirmed or removed. It doesn't pass `allowed_updates`, which
-   would change the bot's update settings; `my_chat_member` is delivered by
-   default.
+   would change the bot's update settings. A new bot's default delivers
+   `my_chat_member`; a bot whose filter was changed elsewhere may not, and
+   then Find groups finds nothing (use manual entry).
 2. From the `my_chat_member` updates it keeps the latest per chat, then the
    chats where the bot is now `member` or `administrator` and the type is
    `group` or `supergroup`. Chats already in the table are left out.
@@ -209,10 +220,11 @@ The user presses **Find groups** to avoid looking up chat IDs:
    ID filled in and the title as a suggested name, then checks it.
 
 Telegram keeps updates for 24 hours and returns at most 100 per call, oldest
-first. If none match, the section says "Remove the bot from the group and
-add it again, then press Find groups" and offers manual entry. If 100
+first. If none match, the section suggests removing the bot from the group,
+adding it again and pressing Find groups, and offers manual entry. If 100
 updates came back, it says the list may be incomplete. A `409` (a webhook is
-set on this bot) is shown as such; the plugin doesn't delete webhooks.
+set, or something else is calling `getUpdates` for this bot) shows Telegram's
+description as is; the plugin doesn't delete webhooks.
 
 ### RPC contract
 
@@ -221,14 +233,18 @@ on the server; none returns the token or raw Bot API responses.
 
 | Method | Input | Output |
 | --- | --- | --- |
-| `listChats` | `null` | `{ tokenSet, chats: [{ name, chatId, use, status, reason? }] }` |
-| `saveChats` | `{ chats: [{ name, chatId, use }] }` (in order) | the new `listChats` result, or `{ ok: false, error }` naming the bad row |
+| `listChats` | `null` | `{ tokenSet, chats: [{ name, chatId, use, status, reason?, migrateToChatId? }] }` |
+| `saveChats` | `{ chats: [{ name, chatId, use }] }` (in order) | `{ ok: true, list }` (the new `listChats` result) or `{ ok: false, row, error }` |
 | `checkChat` | `{ chatId }` | `{ status, reason?, title? }` |
 | `findGroups` | `null` | `{ groups: [{ chatId, title, type }], maybeIncomplete }` |
 
-Telegram chat IDs have at most 52 significant bits, so `chatId` is a plain
-number in RPC and an `INTEGER` in SQLite. The section's input is text,
-parsed as an integer on the server.
+`chatId` crosses RPC as a decimal string. The input schema accepts
+`/^-?\d{1,16}$/` and transforms it into a safe integer (Telegram chat IDs
+have at most 52 significant bits); SQLite stores an `INTEGER`. bb validates
+input before the handler runs, so only the checks a schema can't express
+(duplicate names or IDs, the limit of 10) come back as `{ ok: false }`. A
+schema failure or a network error rejects `rpc.call` instead; the section
+catches both, shows the message and keeps the user's edits.
 
 ## Agent tool
 
@@ -280,16 +296,15 @@ thread's next provider session.
 > watching live. One message per task is typical. Never include secrets,
 > tokens, passwords, or private keys.
 
-`contributeInstructions` adds the current chats (names and `use` notes are
-user text, so they're inserted as one-line plain text, not markup):
+`configure` adds the current chats as `instructions`, only when it offers
+the tool (names and `use` notes are user text, so they're inserted as
+one-line plain text, not markup):
 
 > Telegram chats (pass the name as `chat`; omit it for the first):
 > - Home Admin: infrastructure, reports, blockers
 > - Home: household matters only
 >
 > Only post to a chat what its note says it's for.
-
-It returns `null` when the tool isn't offered.
 
 ## Limits
 
@@ -395,25 +410,31 @@ only; they're recomputed after every load.
 `fetch` for the Bot API; `threads.get` and `projects.get` stubbed explicitly.
 
 - Chat check: good chat; bad token → `needsConfiguration`; channel or forum
-  ID; bot not a member; bot restricted from posting; network failure →
+  ID; bot not a member, `left` or `kicked`; members barred from posting by
+  group permissions; restricted bot with `is_member` false; network failure →
   `unknown` and re-check, no status; one invalid chat leaves the others
   working; no chats → tool not offered, no status.
-- `saveChats`: duplicate names (any case) and IDs, more than 10, bad IDs, over-long fields; a failed save changes nothing; a good
-  save updates the tool and instructions without a reload.
+- `saveChats`: duplicate names (any case) and IDs, more than 10, bad IDs
+  (schema rejection), over-long fields; a failed save changes nothing; a
+  good save updates the tool and instructions without a reload.
+- Statuses: a background re-check or a send-time migration publishes on
+  `chats`; `listChats` then returns `migrateToChatId`.
 - `findGroups`: added/removed/re-added sequences keep the latest state;
   channels, private chats and already-listed groups dropped; message updates
-  ignored; 100 updates → `maybeIncomplete`; 409; `offset` never sent.
+  ignored; 100 updates → `maybeIncomplete`; 409 shows Telegram's
+  description; `offset` and `allowed_updates` never sent.
 - Tool: offered only when usable and top-level; validation; default chat;
   name matching ignoring case; `unknown_chat` lists names; invalid chat
   refused; cooldown and hourly cap across chats under concurrent calls;
   `rejected` vs `uncertain`; 429 → `rate_limited` and the reservation
   released; `migrate_to_chat_id` on send; HTML escaping of hostile titles;
   length budget with long names; no button without `appUrl`.
-- Instructions: names and notes with markup or newlines
-  stay one plain line each; `null` when not offered.
-- App: the section renders statuses, keeps
-  edits after a failed save, and fills a row from **Find groups**; RPC is
-  faked.
+- Instructions: names and notes with markup or newlines stay one plain line
+  each; none when the tool isn't offered.
+- App: the section renders statuses, keeps edits after a failed save and
+  after a rejected `rpc.call`, refreshes statuses on a realtime event
+  without touching edits, fills a row from **Find groups** and from
+  **Use new ID**; RPC is faked.
 
 Live, on `bb.artem.cool`: add Home Admin with **Find groups**, send one
 message from a thread, tap the link on the phone at home and away (Access
@@ -467,6 +488,14 @@ login), check the cooldown message, then add Home and send one there.
   (up to 10) with a "when to use" note and a **Shared** flag, which
   generalizes v2.1's Home rules; **Find groups** replaces looking up IDs;
   chat edits need no reload.
-- **v2.3 (this)**: the user dropped the Shared flag. Every chat is treated
+- **v2.3**: the user dropped the Shared flag. Every chat is treated
   the same, footer included; the "when to use" note and the order (first =
-  default) are the only per-chat rules. Not reviewed yet.
+  default) are the only per-chat rules.
+- **v2.4 (this)**: Codex reviewed v2.3 (bb thread `thr_dpubhpmi3n`), 6
+  findings (4 medium, 2 low), all folded in: the check uses the group's
+  default permissions and `is_member`, not just the member status; chat IDs
+  cross RPC as strings with a schema transform, and rejected calls keep
+  edits; **Use new ID** gets its data from `migrateToChatId`; statuses reach
+  an open section through realtime; Find groups explains its limits and
+  shows 409s as Telegram describes them; the chat list goes into
+  `configure`'s `instructions`, replacing `contributeInstructions`.
