@@ -242,6 +242,16 @@ Rows older than a day are deleted on each send.
   even in privacy mode that includes replies to the bot, commands, and
   service messages. So keep BotFather's privacy mode **on**, and keep the bot
   an ordinary member, not an admin (admins see every message).
+- **Token at rest.** bb writes secret settings to
+  `<dataDir>/plugins/telegram-notify/secrets/botToken` (mode 0600; on
+  `bb.artem.cool`, `/var/lib/bb/.bb/…` on CT133), never to bb's database. The
+  settings API returns only `{ set: true }`. The file isn't encrypted: the
+  `bb` user, root on CT133, Proxmox admins and CT133 backups can read it, as
+  can other plugins running in the same server, so install only trusted
+  plugins. That matches Home Assistant's token (plain JSON in `.storage`);
+  Grafana and Coolify encrypt theirs with a key on the same guest. Agents run
+  on worker machines and can't read it. A leaked token is revoked in
+  @BotFather and replaced in settings.
 - The token never appears in logs, tool results or errors. Bot API errors are
   logged without the request URL, which contains the token.
 - Outbound text leaves the homelab for Telegram's servers and is readable by
@@ -287,11 +297,26 @@ message.
 6. Optionally set `push-notifications` `defaultLevel` to `input-only`, so
    finished turns stop pushing and Telegram carries the reports.
 
+## Open question: more than two chats
+
+One bot can post to any number of groups; the limit is how settings store
+them. Each chat would be `{ name, chatId, use }`, the agent picks by `name`,
+and the `use` notes go into its instructions (practically ≤10 chats, to keep
+those short). The token stays the declarative secret setting in every option.
+
+| Option | Chats | Editing | Work |
+| --- | --- | --- | --- |
+| Two fixed settings (this spec) | 2 | Two chat ID fields | none |
+| One `experimental_multiline` setting, a line per chat (`Home Admin \| -100… \| infra, deploys`), validated with `experimental_schema` | any | Lines of text | small |
+| Own `settingsSection` (frontend bundle + RPC, chats in the plugin database) | any | Table with Add, live per-chat check, and **Find groups** (one user-triggered `getUpdates` for `my_chat_member`, so no ID lookups) | frontend + RPC |
+
+Not decided yet.
+
 ## Out of scope
 
 - Replies from Telegram, and anything else that reads updates.
 - A CLI or automations sending through the plugin.
-- More than two named chats, private chats, and forum topics.
+- Private chats and forum topics.
 - Child threads using the tool.
 
 ## History
