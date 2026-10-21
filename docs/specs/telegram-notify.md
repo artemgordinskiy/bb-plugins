@@ -1,7 +1,9 @@
 # Telegram Notify: technical spec
 
-Status: draft v2.4, 2026-10-21. Not built yet. One-way only; chats are
-managed in the plugin's own settings section (see [History](#history)).
+Status: v2.4, built and shipped as `telegram-notify` 0.1.1 on 2026-10-21;
+installed on `bb.artem.cool` and `bb-work.artem.cool` and live-tested. One-way
+only; chats are managed in the plugin's own settings section (see
+[History](#history) for where the build differs from this spec).
 
 ## Goal
 
@@ -499,3 +501,20 @@ login), check the cooldown message, then add Home and send one there.
   an open section through realtime; Find groups explains its limits and
   shows 409s as Telegram describes them; the chat list goes into
   `configure`'s `instructions`, replacing `contributeInstructions`.
+- **0.1.0 / 0.1.1 (built)**: built from v2.4 by a Sonnet 5.5 thread
+  (`thr_9yhrx5a8rx`) and reviewed before release. SDK 0.6.49 matched the
+  surfaces table. Differences from this spec:
+  - The tool has one extra error, `not_configured`, for a missing or rejected
+    token at send time.
+  - `creator` counts as `administrator`; a `member` bot in a group that
+    reports no `permissions` is `invalid`.
+  - A 2xx reply whose body can't be read counts as no answer: `uncertain` on
+    send, `unknown` on a check.
+  - Telegram's error descriptions are cut to one line of 200 characters
+    before they reach agents or the section.
+  - The cooldown's "try again after HH:MM" uses the server's local time.
+  - The section locks its controls while a save is in flight.
+  - Tests run under `node --test` (server) and vitest with jsdom (section).
+  - The icon is `BellDot`; bb has no `Bell`.
+  - 0.1.0 didn't install: `@radix-ui/react-slot` was a devDependency, and git
+    installs omit those. 0.1.1 moves it to `dependencies`.
