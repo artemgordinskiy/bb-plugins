@@ -36,15 +36,19 @@ function mountTypography(signal: AbortSignal): () => void {
   // Appended last in <head> so these rules follow bb's and its theme's.
   document.head.append(faces, rules);
 
+  let theme = readThemeTokens();
   const apply = () => {
     const config = loadConfig();
-    const next = buildStylesheet(config, readThemeTokens());
+    const next = buildStylesheet(config, theme);
     if (rules.textContent !== next) rules.textContent = next;
     preloadTerminalFont(config);
   };
   apply();
   const unsubscribe = subscribeConfig(apply, signal);
-  const unobserve = observeTheme(apply, signal);
+  const unobserve = observeTheme(() => {
+    theme = readThemeTokens();
+    apply();
+  }, signal);
   return () => {
     unsubscribe();
     unobserve();

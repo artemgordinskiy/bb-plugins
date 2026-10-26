@@ -88,8 +88,12 @@ bundled fonts, and rules generated from the saved config
   `--diffs-font-features` for the diff and file viewers, which render in
   shadow DOM.
   - Overrides fall back to the theme's own stacks. The plugin reads them from
-    the page with its rules switched off, and reads them again when the theme
-    or appearance changes.
+    the page before applying its rules, and reuses that sample for config edits.
+    Theme changes are filtered to root attributes and stylesheets that could
+    affect tokens, then coalesced into idle work (or an animation frame where
+    idle callbacks are unavailable). Only genuine theme changes resample with
+    the rules temporarily switched off to preserve the browser’s CSS cascade;
+    menu scroll locks, component styles and the plugin’s own sheets do not.
   - Diff sizes are left alone because bb's virtualized diff view depends on
     its line height.
   - The terminal measures its font when it opens, so a new terminal font
