@@ -1,9 +1,11 @@
 # PR Watcher: technical spec
 
-Status: v1.3, draft. Not built. The user has answered the open questions;
-the answers are in [Decisions](#decisions) and folded into the sections
-below. v1.3 folds in a Codex review of v1.2. [History](#history) lists
-where each draft differs from the one before.
+Status: v1.4, draft. Not built. The user has answered the open questions,
+including the four that v1.3 raised; the answers are in
+[Decisions](#decisions) and folded into the sections below. v1.3 folded
+in a Codex review of v1.2. [Open questions](#open-questions) lists what
+is still undecided, and [History](#history) lists where each draft
+differs from the one before.
 
 ## Goal
 
@@ -106,8 +108,8 @@ plugin calls `pullRequests`, `github-pr-status` reloads any data older
 than 10 s, so it runs `gh` on its own.
 
 All work on one PR runs through a per-PR queue in memory: claims,
-`unwatch`, discovery results, lifecycle changes, poll results and the
-whole delivery (checks, send, and its outcome). Two operations on the same
+`unwatch`, discovery results, lifecycle changes, poll results, the
+unowned prune and the whole delivery (checks, send, and its outcome). Two operations on the same
 PR never interleave. Different PRs run in parallel.
 
 ### SDK surfaces used (plugin SDK 0.6.94)
@@ -210,8 +212,10 @@ a PR that isn't checked out there has `branchBound` false, and branch
 moves never drop it.
 
 `threadId` is null when the PR is **unowned** (see [Changes](#changes)).
-An unowned PR keeps its state, is not polled, and shows its reason in
-`status`.
+An unowned PR keeps its state, sends nothing, and shows its reason in
+`status`. It isn't polled through the host entry; only its open or
+closed state is checked every 30 min (see
+[Pruning unowned PRs](#pruning-unowned-prs)).
 
 `revision` goes up on every change of owner, of `branchBound`, and of
 watching state. Each delivery records the revision it was made for. A
@@ -293,8 +297,9 @@ What a claim does to stored state:
   becomes unowned, with the reason
   `owner <id> archived; nearest parent <id> is in another environment`.
   With no eligible ancestor, the binding is dropped (D5).
-- **Unowned PR**: only an explicit claim takes it. Unowned PRs are not
-  polled and send nothing. `status` lists them with their reason.
+- **Unowned PR**: only an explicit claim takes it. Unowned PRs send
+  nothing, and the 30-min prune drops them once merged or closed (D11).
+  `status` lists them with their reason.
 - **Owner unarchived**: no effect. The binding doesn't come back on its
   own; use `watch`.
 - **The branch moves to another PR**: see
@@ -330,7 +335,9 @@ example after `gh pr checkout` of a fork):
 - another PR, or `absent`: the binding is dropped and discovery runs for
   the environment;
 - `unavailable`, or `github-pr-status` is off: the delivery is held with
-  `held: branch unverified`, and the next poll tries again.
+  `held: branch unverified`, and the next poll tries again. If
+  `github-pr-status` was turned off after the claim, the hold lasts until
+  it is back (D12). The plugin doesn't guess from the branch name alone.
 
 This catches a user switching branches while the threads are idle, with
 no agent turn to trigger discovery. Verify at build time that
@@ -365,9 +372,39 @@ An owned PR is polled through the host entry. Cadence for each binding:
 | The owner fired `thread.idle` in the last 10 min (it may have just pushed) | 60 s, and one poll right away on the event |
 | Open, CI settled | 5 min |
 | Host not connected, or a call failed | 5 min, state unchanged |
+| Unowned | Not polled through the host entry. State only, every 30 min (see below) |
 
-Unowned PRs are not polled. At 60 s a PR with running CI uses about 60
-GraphQL points an hour, out of a 5,000 limit per user.
+At 60 s a PR with running CI uses about 60 GraphQL points an hour, out of
+a 5,000 limit per user.
+
+### Pruning unowned PRs
+
+Every 30 min, the plugin checks its unowned PRs with one batched
+`pullRequests` call for their environments (D11). This reads PR state
+only. It makes no host entry call and reads no checks or comments. It
+never changes `items_watermark`, `seen_items`, `pending_items` or
+`reported_shas`, and never sends.
+
+`pullRequests` answers per environment, not per PR, so each unowned row
+is judged by its environment's answer:
+
+| Answer for the row's environment | Effect |
+| --- | --- |
+| This PR, `merged` or `closed` | The row is dropped with its state and leaves `status` |
+| This PR, `open` or `draft` | Kept |
+| Another PR, or `absent`, and the row is `branchBound` | Dropped, as [Branch identity](#branch-identity) does for owned PRs |
+| Another PR, or `absent`, and the row isn't `branchBound` | Kept. The environment's answer says nothing about this PR |
+| `unavailable` | Kept, and checked again in 30 min |
+
+Without `github-pr-status`, nothing is pruned. Unowned rows stay until
+an explicit claim takes them or their environment is removed, and
+`status` shows `prune unavailable` next to them. A row that isn't
+`branchBound` is never pruned this way either; it waits for a claim or
+for its environment to go.
+
+`github-pr-status` re-runs `gh` for each requested environment whose data
+is over 10 s old. The prune therefore costs one `gh` run per environment
+with unowned PRs every 30 min, and nothing when there are none.
 
 ### Host contract (`snapshot`)
 
@@ -429,7 +466,10 @@ line of `gh` stderr cut to 200 chars. The server treats any of them as
 Stored per PR (see [Storage](#storage)):
 
 - `reported_shas`: every head SHA whose settled CI was delivered or
-  baselined, kept as long as the binding;
+  baselined, with its verdict, failed check names and whether a recovery
+  went out, kept as long as the binding;
+- on the binding, `failed_sha` and `failed_checks`: a settled failure
+  seen on the head SHA but not yet delivered;
 - `seen_items`: feedback delivered or baselined;
 - `pending_items`: feedback found but not yet delivered;
 - the feedback watermark: the newest `at` of a complete fetch.
@@ -440,7 +480,8 @@ A CI report is pending when all of these hold:
 
 - the snapshot's `headSha` is not in `reported_shas` for this PR. Going
   back to a SHA reported earlier (A → B → A) doesn't report it again, and
-  neither does a re-run on the same SHA;
+  neither does a re-run on the same SHA, except for the one recovery wake
+  under [Recovery after a failure](#recovery-after-a-failure);
 - `ci.complete` is true. A truncated list never counts as settled;
 - `ci.rollup` is `SUCCESS`, `FAILURE` or `ERROR`. The rollup covers every
   check on the commit, so it guards against checks the list missed;
@@ -457,12 +498,38 @@ A CI report is pending when all of these hold:
   shows `ci: incomplete (<reason>)`.
 
 CI failed if any check failed, and passed otherwise. Pass and failure both
-wake the thread (D3), and each head SHA is reported at most once.
+wake the thread (D3). Each head SHA gives one CI wake, plus at most one
+recovery wake (D10).
 
 This is "first settled observation per head SHA", not the brief's
 "pending → settled edge". At the 5-min cadence a short CI run can start
 and finish between polls, and an edge trigger would never fire. A push of
 a new SHA re-arms the trigger.
+
+### Recovery after a failure
+
+A flaky check can fail and then pass when it re-runs on the same SHA.
+That gets one extra wake (D10), an exception to one CI wake per head SHA:
+
+- **Failure delivered, then a pass.** `reported_shas` holds the head SHA
+  as `delivered` with verdict `fail` and `recovered` 0, and CI on that
+  SHA is now settled and passing. A recovery report is then pending:
+  `CI now passing on <sha7>; failed earlier: <names>`. The names are the
+  failed checks the failure wake listed, stored with the row.
+- **At most one recovery per SHA.** Delivering it sets `recovered` to 1.
+  After that, a further fail → pass on the SHA wakes no one. A delivered
+  pass followed by a failure on the same SHA wakes no one either.
+- **Failure still pending, then a pass.** A CI report is built from the
+  latest snapshot when it is delivered, so a pass that arrives while the
+  failure is held replaces it. To keep the earlier failure visible, each
+  poll that sees a settled failure on an unreported head SHA records the
+  SHA and its failed check names on the binding (`failed_sha`,
+  `failed_checks`). If the report goes out as a pass on that SHA, it
+  reads `CI passed on <sha7>; failed earlier: <names>`. That is one wake,
+  not two. The SHA is stored with verdict `pass`, so no recovery follows.
+  `failed_sha` is cleared when that SHA is reported or the head moves.
+- **A baselined failure** (the PR was claimed while failing) was never
+  delivered, so a later pass on that SHA doesn't wake the thread.
 
 ### New feedback
 
@@ -647,7 +714,9 @@ across the `await`:
 1. One short transaction writes the delivery row (outcome `sending`, with
    the binding's `revision`), moves the delivered items from
    `pending_items` to `seen_items`, and adds the head SHA to
-   `reported_shas` as `delivered`. It writes nothing if the binding's
+   `reported_shas` as `delivered` with its verdict and failed check
+   names. For a recovery report it sets that row's `recovered` to 1
+   instead. It writes nothing if the binding's
    revision has changed since the checks. The moved rows are kept in
    memory for a rollback.
 2. `threads.send`.
@@ -665,7 +734,9 @@ across the `await`:
 
 The rollback only re-adds the rows this delivery moved, and only while
 the binding still exists. It can't overwrite newer state, because the
-state is sets of ids and SHAs rather than single values.
+state is sets of ids and SHAs rather than single values. The one flag,
+`recovered`, only goes from 0 to 1, and a rollback resets it only if
+this delivery set it.
 
 A crash between the send and the update leaves `sending`, which startup
 treats as `unknown`. The trade-off is that a lost message is possible but
@@ -766,8 +837,12 @@ GitHub sits inside the frame.
   frame.
 - **Title**: `Title: <title>`.
 - **CI**: `CI failed on <sha7>: <names>` with one link line per failed
-  check (at most 10, then `+N more`). On a pass: `CI passed on <sha7>`.
-  `sha7` must be hex.
+  check (at most 10, then `+N more`). On a pass: `CI passed on <sha7>`,
+  or `CI passed on <sha7>; failed earlier: <names>` when a failure on
+  that SHA was seen but not delivered. A recovery:
+  `CI now passing on <sha7>; failed earlier: <names>` (see
+  [Recovery after a failure](#recovery-after-a-failure)). `sha7` must be
+  hex.
 - **Feedback**: `New feedback:`, then one line per item, at most 10, then
   `+N more`. An excerpt is shown only for review bodies and conversation
   comments, and only while the item is in the latest snapshot (pending
@@ -789,7 +864,9 @@ only excerpts:
 | Logins | Must match `^[A-Za-z0-9-]{1,39}$`. Anything else is shown as `(unknown author)` |
 | URLs | Shown only if they start with `https://github.com/<owner>/<repo>/` of this PR and are under 300 chars. Other check URLs (an external CI or deploy service) are left out; the check name is still listed |
 
-Message text isn't stored.
+Message text isn't stored. Failed check names are the only GitHub text
+the plugin stores, cleaned as above and capped at 10 per SHA, so a
+recovery wake can name them.
 
 ## Storage
 
@@ -809,16 +886,21 @@ CREATE TABLE bindings (
   branch_bound INTEGER NOT NULL,      -- the environment's branch had this PR at claim time
   revision INTEGER NOT NULL,
   items_watermark TEXT,               -- newest item `at` of a complete fetch
+  failed_sha TEXT,                    -- settled failure seen on the head SHA, not yet delivered
+  failed_checks TEXT,                 -- its failed check names, JSON, cleaned, at most 10
   next_poll_at INTEGER NOT NULL,
   CHECK ((thread_id IS NULL) = (unowned_reason IS NOT NULL))
 );
 CREATE INDEX bindings_thread ON bindings (thread_id);
 CREATE INDEX bindings_environment ON bindings (environment_id);
 
-CREATE TABLE reported_shas (          -- CI reported or baselined, once per head SHA
+CREATE TABLE reported_shas (          -- CI reported or baselined, one row per head SHA
   pr_url TEXT NOT NULL,
   sha TEXT NOT NULL,
   reason TEXT NOT NULL CHECK (reason IN ('delivered', 'baselined')),
+  verdict TEXT NOT NULL CHECK (verdict IN ('pass', 'fail')),
+  failed_checks TEXT,                 -- JSON array of cleaned check names, at most 10; fail only
+  recovered INTEGER NOT NULL DEFAULT 0, -- the one recovery wake went out (D10)
   at INTEGER NOT NULL,
   PRIMARY KEY (pr_url, sha)
 );
@@ -914,17 +996,22 @@ Startup reconcile, after the handlers and the hook are registered:
   (see [Triggers](#triggers)). A bot's conversation reply to the agent's
   own comment doesn't count either.
 - **Cost.** Every wake starts a paid turn, and there is no daily cap
-  (D4). Repeat wakes are prevented by once-per-head-SHA CI reports
-  (`reported_shas`) and the comment cursor (`seen_items`). Other
-  mitigations: at-most-once delivery, the hold while the owner is busy,
-  and one message per batch. An outsider can make the `claude` and
-  `chatgpt-codex-connector` apps answer `@claude` and `@codex` mentions
-  on repos where anyone may trigger them. Those answers are mostly
-  conversation comments, which no longer count. A mention that asks a
-  bot for a review (`@codex review`, `@coderabbitai review`), or a reply
-  in a CodeRabbit inline thread, can still produce a bot review, and each
-  one wakes the thread with no cap. See the open question in
-  [History](#history) v1.3.
+  (D4). Repeat wakes are prevented by CI reports keyed by head SHA
+  (`reported_shas`: one wake per SHA plus at most one recovery, D10) and
+  the comment cursor (`seen_items`). Other mitigations: at-most-once
+  delivery, the hold while the owner is busy, and one message per batch.
+  An outsider can make the `claude` and `chatgpt-codex-connector` apps
+  answer `@claude` and `@codex` mentions on repos where anyone may
+  trigger them. Those answers are mostly conversation comments, which
+  don't count (D1).
+- **Accepted risk: outsider-triggered bot reviews** (D9). A mention that
+  asks a bot for a review (`@codex review`, `@coderabbitai review`), or a
+  reply in a CodeRabbit inline thread, produces a bot review, and each
+  one wakes the thread. The user accepted this: they chose no daily cap
+  and no per-bot dedupe, so nothing limits these wakes. The way out is
+  `bb pr-watcher unwatch`, which drops the thread's PRs and keeps the
+  thread off until the next `watch`. Taking a bot out of `botAuthors`
+  stops its reviews counting on every PR.
 - **Who can claim.** Any agent in an eligible thread can claim any PR URL,
   and so can anyone who can run the CLI. bb has a single user, so the
   plugin adds no access checks. Claims are visible in `status`, and the
@@ -966,7 +1053,7 @@ The fake SDK checks argument shapes against the 0.6.94 declarations:
   - owner archived with an eligible parent in the same environment → the
     PR moves to it;
   - owner archived with the nearest eligible parent in another
-    environment → unowned with the reason, not polled, nothing sent, and
+    environment → unowned with the reason, no host poll, nothing sent, and
     an explicit `watch` takes it;
   - owner archived with no eligible parent → dropped;
   - handoff to a parent, then the environment is removed → dropped;
@@ -987,7 +1074,23 @@ The fake SDK checks argument shapes against the 0.6.94 declarations:
     same PR → kept;
   - `pullRequests` unavailable during a mismatch → held, not sent;
   - a URL claim with `branchBound` false is never dropped for a branch
-    change.
+    change;
+  - `github-pr-status` turned off after a branch-bound claim, then a
+    mismatch → held with `branch unverified` until it is back, then
+    kept or dropped by its answer (D12).
+- **Pruning unowned PRs:**
+  - the environment reports the unowned PR `merged`, or `closed` →
+    dropped with its state and gone from `status`;
+  - `open` or `draft` → kept;
+  - a `branchBound` row whose environment now has another PR, or none →
+    dropped; a row that isn't `branchBound` → kept;
+  - `unavailable` → kept and checked again on the next run;
+  - runs every 30 min as one batched `pullRequests` call, and not at all
+    when there are no unowned PRs;
+  - makes no host entry call, leaves `items_watermark`, `seen_items`,
+    `pending_items` and `reported_shas` unchanged, and sends nothing;
+  - `github-pr-status` missing → nothing pruned, and `status` shows
+    `prune unavailable`.
 - **Observed scan:**
   - a successful `gh pr create` inside a pipeline or after `&&`, with the
     URL in its output → binds;
@@ -999,15 +1102,29 @@ The fake SDK checks argument shapes against the 0.6.94 declarations:
     binds; `failed` → no claim;
   - the scan stops at the turn boundary and pages past 100 events.
 - **CI:**
-  - first settled observation fires once per SHA, and a new SHA re-arms
+  - first settled observation fires once per SHA (recovery aside), and a new SHA re-arms
     it;
   - A → B → A: no second report for A;
-  - a re-run on the same SHA (fail then pass) wakes once, including after
-    a restart and after a transfer;
+  - a re-run on the same SHA with the same verdict doesn't wake again,
+    including after a restart and after a transfer;
+  - a delivered failure, then a pass on the same SHA → one recovery wake
+    that names the checks that failed before;
+  - a pending failure (owner busy), then a pass on the same SHA → one
+    wake: a pass item that mentions the earlier failure, and no recovery
+    afterwards;
+  - a second fail → pass on the same SHA after a recovery → no wake;
+  - a delivered pass, then a failure on the same SHA → no wake;
+  - a pass on a new SHA after a delivered failure → the normal pass wake,
+    with no "failed earlier" note;
+  - a failure delivered before a restart and a pass after it → one
+    recovery wake;
+  - a recovery send that is rolled back resets `recovered` and is
+    delivered later; one with outcome `unknown` is not repeated;
   - a PR claimed while CI is failing wakes on the pass of a later, new
-    head SHA, and not on a same-SHA re-run;
+    head SHA, and not on a same-SHA re-run (the failure was baselined,
+    not delivered);
   - running → no report; no checks → no report;
-  - a pass and a failure each wake once per head SHA;
+  - a pass and a failure each wake once per head SHA, apart from D10;
   - truncated checks (`complete` false) → no report, even when every
     listed check passed;
   - `REQUESTED`, `WAITING`, a null conclusion and `STALE` → `incomplete`,
@@ -1077,6 +1194,8 @@ The fake SDK checks argument shapes against the 0.6.94 declarations:
     URL claims still poll.
 - **Message:**
   - the length budget and `+N more`;
+  - the three CI pass forms: plain, with an undelivered failure, and a
+    recovery, each naming at most 10 checks;
   - cleaning of hostile excerpts (newlines, fake "PR Watcher" headers, a
     fake `End of GitHub data.`, markdown links, 10 KB bodies);
   - the same for a hostile title and hostile check names, which stay
@@ -1160,10 +1279,41 @@ Verify at build time:
 - Notifying the user directly. That stays with `push-notifications` and
   `telegram-notify`.
 
+## Open questions
+
+The user's answers to v1.3's four questions are D9–D12. These came up
+while folding them in. Each one has a default in the spec, so none of
+them blocks building. Build-time checks are listed under
+[Rollout](#rollout).
+
+1. **No separate pause switch.** The answer to D9 names "the pause
+   switch plus `unwatch`" as the way out. The spec has no separate
+   pause: v1 merged the off switch into `unwatch`, which is per thread.
+   The default is `unwatch` only. Is a global pause (a setting that
+   holds every wake) wanted?
+2. **A pass, then a failure on the same SHA.** D10 covers fail → pass
+   only. A delivered pass followed by a failing re-run on the same SHA
+   wakes no one. The default is to keep it silent.
+3. **A baselined failure, then a pass.** A PR claimed while failing had
+   its failure baselined, not delivered, so a later pass on that SHA
+   doesn't wake the thread. The default is to keep it silent, since the
+   thread was never told about the failure.
+4. **The prune also drops branch moves.** Besides merged and closed PRs,
+   the prune drops a branch-bound unowned row whose environment now has
+   another PR or none, the same rule [Branch identity](#branch-identity)
+   applies to owned PRs. Is that wanted, or should it drop merged and
+   closed PRs only?
+5. **Some unowned rows can't be pruned.** `pullRequests` answers per
+   environment, so an unowned row that isn't branch-bound (a URL claim
+   for a PR not checked out there) has no state to read. It stays until
+   it is claimed or its environment is removed. The default is to accept
+   this, because such rows are rare.
+
 ## Decisions
 
-The user answered the v1 open questions on 2026-10-29, and two v1.3
-review findings. Each one is folded into the sections above.
+The user answered the v1 open questions on 2026-10-29, two v1.3 review
+findings, and the four questions v1.3 raised (D9–D12). Each one is
+folded into the sections above.
 
 - **D1. Comment authors.** Repo owners, org members and collaborators
   (`OWNER`, `MEMBER`, `COLLABORATOR`), through reviews and conversation
@@ -1177,12 +1327,13 @@ review findings. Each one is folded into the sections above.
 - **D2. Observed ownership.** Kept: a successful `gh pr create` and the
   GitHub MCP `create_pull_request` call claim the PR they created. Behind
   `autoOwnership`.
-- **D3. CI pass.** Always wakes the thread, as does a failure. At most
-  once per head SHA. The `wakeOnPass` setting and
-  the `last_ci` column from v1 are removed.
+- **D3. CI pass.** Always wakes the thread, as does a failure. One CI
+  wake per head SHA, with one exception: a recovery wake when a delivered
+  failure later passes on the same SHA (D10). The `wakeOnPass` setting
+  and the `last_ci` column from v1 are removed.
 - **D4. No daily cap.** Wakes are not limited per PR or per day.
-  Once-per-head-SHA CI reports and the comment cursor stop repeat
-  wakes. This replaces the first answer, a cap of 6 per rolling 24 h.
+  CI reports keyed by head SHA (D3, D10) and the comment cursor stop
+  repeat wakes. This replaces the first answer, a cap of 6 per rolling 24 h.
 - **D5. Archived owner.** Hand the PR to the nearest eligible parent,
   but only if it is in the PR's environment. Otherwise the PR becomes
   unowned and `status` gives the reason. With no eligible parent, drop
@@ -1192,11 +1343,30 @@ review findings. Each one is folded into the sections above.
 - **D6. Draft PRs.** Watched the same as ready PRs.
 - **D7. `github-pr-status`.** A soft dependency. Without it, discovery
   and the observed and auto claims are off and a status says why;
-  `watch --pr <url>` still works.
+  `watch --pr <url>` still works. See D11 and D12 for what else stops
+  without it.
 - **D8. Excerpts.** A cleaned 160-char excerpt for review bodies and
   conversation comments, marked untrusted. Inline comments are counted,
   not quoted.
 - **Tool name.** `pr_watch`.
+- **D9. Outsider-triggered bot reviews.** Accepted risk, no change from
+  v1.3. A bot review that an outsider asks for (`@codex review`,
+  `@coderabbitai review`, a reply in a CodeRabbit inline thread) wakes
+  the thread like any other bot review. There is no cap and no per-bot
+  dedupe; `unwatch` is the way out. See [Security](#security).
+- **D10. Flaky fail then pass on the same SHA.** One more wake on the
+  pass, naming the checks that failed before. At most one recovery per
+  SHA. If the failure wasn't delivered yet, the pass replaces it and
+  mentions the failure, so there is one wake, not two. See
+  [Recovery after a failure](#recovery-after-a-failure).
+- **D11. Merged unowned PRs.** Pruned by a state-only check every 30 min
+  through `pullRequests`, with no host entry call, no change to any
+  cursor and no wake. Without `github-pr-status`, nothing is pruned. See
+  [Pruning unowned PRs](#pruning-unowned-prs).
+- **D12. `github-pr-status` turned off after a branch-bound claim.**
+  Deliveries on a branch mismatch are held until it is back, as v1.3
+  specified. No behaviour change. See
+  [Branch identity](#branch-identity).
 
 ## History
 
@@ -1252,7 +1422,7 @@ review findings. Each one is folded into the sections above.
   `dailyCapPerPr` setting, the hold reason and its test are removed. The
   `deliveries` table stays for at-most-once recovery and for `status`.
   Once-per-head-SHA CI dedupe and the comment cursor are unchanged.
-- **v1.3 (this draft)**: Codex reviewed v1.2 (bb thread `thr_m9z4mzpz6m`),
+- **v1.3**: Codex reviewed v1.2 (bb thread `thr_m9z4mzpz6m`),
   19 findings (11 high, 7 medium, 1 low), all folded in. #4 and #15
   follow the user's decisions instead of the review's suggested fix; #7
   is applied as far as the hook API allows. Numbers are the review's:
@@ -1318,3 +1488,24 @@ review findings. Each one is folded into the sections above.
       re-run must not wake again.
   19. The snapshot carries `title`, so URL claims without
       `github-pr-status` still have one.
+- **v1.4 (this draft)**: the user answered the four questions v1.3 raised
+  (D9–D12):
+  - **D9**: outsider-triggered bot reviews are an accepted risk, with no
+    behaviour change. Moved to Security, with the reason: no cap and no
+    per-bot dedupe by choice, and `unwatch` is the way out.
+  - **D10**: a flaky fail then pass on the same SHA gets one recovery
+    wake that names the earlier failures. At most one per SHA. A failure
+    not yet delivered collapses into the pass. This is an exception to
+    one CI wake per head SHA (D3). `reported_shas` gains `verdict`,
+    `failed_checks` and `recovered`, and bindings gain `failed_sha` and
+    `failed_checks`. Failed check names are now the only GitHub text
+    stored.
+  - **D11**: unowned PRs are pruned by a state-only `pullRequests` check
+    every 30 min. It doesn't touch any cursor and never wakes a thread.
+    Without `github-pr-status`, nothing is pruned.
+  - **D12**: deliveries stay held on a branch mismatch while
+    `github-pr-status` is off, as specced, now recorded as a decision.
+
+  v1.3's open questions were only in its report and in a dangling
+  Security link to History. They now have an
+  [Open questions](#open-questions) section.
