@@ -1,8 +1,9 @@
 # PR Watcher: technical spec
 
-Status: v1, draft. Not built. The open questions are in
-[Open questions](#open-questions). [History](#history) lists where this
-draft differs from the starting brief.
+Status: v1.1, draft. Not built. The user has answered the open questions;
+the answers are in [Decisions](#decisions) and folded into the sections
+below. [History](#history) lists where this draft differs from the
+starting brief.
 
 ## Goal
 
@@ -225,7 +226,7 @@ The `autoOwnership` setting turns off 2 and 3 together.
   ancestor (`parentThreadId` chain), with `claimedBy` kept and
   `previousThreadId` set. With no eligible ancestor, the binding is
   dropped. This is a change from the brief: see
-  [Open questions](#open-questions) Q5.
+  [Decisions](#decisions) D5.
 - **Owner unarchived**: no effect. The binding doesn't come back on its
   own; use `watch`.
 - **The branch moves to another PR**: discovery returns a different URL
@@ -320,11 +321,11 @@ A CI report is pending when all of these hold:
 - at least one check exists;
 - every check has finished (no `QUEUED`, `IN_PROGRESS`, `PENDING`,
   `EXPECTED`);
-- the conclusion is one the settings ask for. Failure is any of `FAILURE`,
-  `TIMED_OUT`, `CANCELLED`, `ACTION_REQUIRED`, `STARTUP_FAILURE`, or an
-  `ERROR`/`FAILURE` status context. Pass is everything else. The default
-  is `wakeOnPass: "after-failure"`: a pass wakes the thread only when the
-  last CI report for this PR was a failure (Q3).
+- pass and failure both wake the thread (D3). Failure is any of
+  `FAILURE`, `TIMED_OUT`, `CANCELLED`, `ACTION_REQUIRED`,
+  `STARTUP_FAILURE`, or an `ERROR`/`FAILURE` status context. Pass is
+  everything else. Each head SHA is reported at most once, and the daily
+  cap applies.
 
 This is "first settled observation per head SHA", not the brief's
 "pending → settled edge". At the 5-min cadence a short CI run can start
@@ -340,21 +341,36 @@ An item is pending when all of these hold:
   anything an agent posts carries the user's login. Without this rule the
   plugin would wake the thread for its own replies. It is a correctness
   rule, not a preference, and it also drops the user's own comments;
-- its author passes the filter (Q1):
-  - a bot whose login is in `botAuthors` (default
-    `copilot-pull-request-reviewer`, `coderabbitai`). Other bots
-    (`github-actions`, `dependabot`, deploy previews, coverage) are
-    ignored;
+- its author passes the filter (D1):
+  - a bot (GraphQL `__typename === "Bot"`) whose login is in
+    `botAuthors`. The default list holds the review bots in the table
+    below. Other bots (`github-actions`, `renovate`, `dependabot`,
+    `vercel`, coverage and deploy bots) are ignored. A `User` whose
+    login happens to match a listed bot is not treated as that bot;
   - or a human whose `association` is `OWNER`, `MEMBER` or
     `COLLABORATOR`;
 - for a review: not an empty `COMMENTED` review with no inline comments,
   and not `DISMISSED`.
 
+Default review bots. These are GraphQL `Bot.login` values, which have no
+`[bot]` suffix. They were checked on 2026-10-29 with `gh api graphql`
+searches of PRs those bots had reviewed or commented on:
+
+| Bot | GraphQL login | REST login |
+| --- | --- | --- |
+| GitHub Copilot code review | `copilot-pull-request-reviewer` | `Copilot` (REST shows a different name) |
+| CodeRabbit | `coderabbitai` | `coderabbitai[bot]` |
+| Claude (GitHub app) | `claude` | `claude[bot]` |
+| ChatGPT Codex connector | `chatgpt-codex-connector` | `chatgpt-codex-connector[bot]` |
+
+The host uses GraphQL only, so matching is on the GraphQL login, with any
+`[bot]` suffix stripped from the setting before comparing. The live test
+confirms that each bot's items pass the filter.
+
 Items that exist when the PR is claimed go straight into `seen_items`. If
-CI is already settled at claim time, `reported_sha` and `last_ci` are set
-from it. A claim never wakes the thread for old state, and a PR claimed
-while failing still gets its `after-failure` pass wake. The tool and CLI results
-summarize them instead.
+CI is already settled at claim time, `reported_sha` is set from it. A
+claim never wakes the thread for old state. The tool and CLI results
+summarize that state instead.
 
 ## Delivery
 
@@ -419,8 +435,8 @@ deleted, as Nudger does.
 Three steps. No SQLite transaction stays open across the `await`:
 
 1. One short transaction writes the delivery row (outcome `sending`), the
-   new `seen_items` and the new `reported_sha` and `last_ci`, and keeps
-   the previous `reported_sha` and `last_ci` in memory.
+   new `seen_items` and the new `reported_sha`, and keeps the previous
+   `reported_sha` in memory.
 2. `threads.send`.
 3. On `sent`, the outcome becomes `sent`. On `queued`, rejection or an
    error, a second transaction deletes those rows and restores the
@@ -436,8 +452,9 @@ as one message.
 
 A child worker that opened a PR is usually stopped once its task is done.
 `mode: "start"` restarts it, and with `parentNotifications: "auto"` its
-reply reaches the parent. v1 wakes the child, since it has the context.
-Q5 asks whether to hand stopped children's PRs to the parent instead.
+reply reaches the parent. The plugin wakes the child, since it has the
+context (D5). Only an archived or deleted owner hands the PR to its
+parent.
 
 ## Agent tool
 
@@ -487,8 +504,7 @@ Each command takes `--json`.
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `instructionLine` | string | "Check the failures and comments and fix what's needed locally. Don't push, reply on GitHub or request reviewers without asking the user first." | Last line of every message. Max 500 chars |
-| `wakeOnPass` | enum `never` \| `after-failure` \| `always` | `after-failure` | Q3. Check that `settings.define` supports an enum; otherwise use a string with validation |
-| `botAuthors` | string | `copilot-pull-request-reviewer, coderabbitai` | Comma-separated bot logins whose feedback counts. Matched with and without a `[bot]` suffix |
+| `botAuthors` | string | `copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector` | Comma-separated bot logins whose feedback counts (D1). A trailing `[bot]` is stripped, so the REST form works too. Only GraphQL `Bot` authors match |
 | `dailyCapPerPr` | number | 6 | Wakes per PR in a rolling 24 h. When reached, items keep accumulating and `status` shows `capped` |
 | `idleGraceSeconds` | number | 60 | 0–600 |
 | `autoOwnership` | boolean | true | Observed and auto claims |
@@ -525,7 +541,6 @@ CREATE TABLE bindings (
   previous_thread_id TEXT,
   host_id TEXT NOT NULL,
   reported_sha TEXT,              -- last head SHA whose settled CI was delivered or baselined
-  last_ci TEXT,                   -- 'pass' | 'fail' of the last CI report; for wakeOnPass
   next_poll_at INTEGER NOT NULL,
   PRIMARY KEY (environment_id, pr_url)
 );
@@ -595,7 +610,10 @@ Startup reconcile, after the handlers are registered:
 
   This lowers the risk but doesn't remove it: a collaborator's comment, or
   a reviewer bot quoting attacker text, still reaches the agent with its
-  usual tool permissions. Q1 decides how wide the filter is.
+  usual tool permissions. The `claude` and `chatgpt-codex-connector`
+  apps reply to `@claude` and `@codex` mentions, and on some repos anyone
+  can make those mentions, so their comments can echo text an outsider
+  wrote. The filter is set by D1.
 - **Self-wake loop.** Items by the `gh` viewer login are always dropped
   (see [Triggers](#triggers)).
 - **Cost.** Every wake starts a paid turn. Mitigations: the daily cap,
@@ -643,9 +661,10 @@ under `node --test`.
     it;
   - pending → no report;
   - no checks → no report;
-  - `wakeOnPass` all three values;
+  - a pass and a failure each wake once per head SHA;
   - a viewer-login comment is never pending;
-  - the bot allowlist with and without `[bot]`;
+  - the bot allowlist with and without `[bot]`, all four defaults, and a
+    `User` named like a listed bot is dropped;
   - `CONTRIBUTOR` and `NONE` associations are dropped;
   - an empty `COMMENTED` review is dropped;
   - items present at claim are baselined;
@@ -680,9 +699,10 @@ Live, on `bb-work.artem.cool`, against a scratch PR in this repo:
 
 1. Open the PR from a thread and confirm the observed claim.
 2. Push a commit that fails lint and get one wake.
-3. Push the fix and get one pass wake (`after-failure`).
-4. Leave a review comment from a second account, or have Copilot review,
-   and get one wake.
+3. Push the fix and get one pass wake.
+4. Leave a review comment from a second account, then have Copilot,
+   CodeRabbit, Claude and Codex review where they are installed, and get
+   one wake per batch.
 5. Have the agent reply on GitHub and confirm there is no wake.
 6. Run `unwatch`, comment again, and confirm there is no wake.
 7. Merge and confirm the binding is gone.
@@ -722,45 +742,37 @@ table on each bb upgrade before bumping.
 - Notifying the user directly. That stays with `push-notifications` and
   `telegram-notify`.
 
-## Open questions
+## Decisions
 
-Each question has a recommended default; answer yes or give an
-alternative.
+The user answered the v1 open questions on 2026-10-29. Each one is folded
+into the sections above.
 
-1. **Which comment authors count?** Recommended: the `OWNER`, `MEMBER`
-   and `COLLABORATOR` associations, plus Copilot and CodeRabbit; other
-   bots ignored; the viewer always ignored. Alternative: everyone except
-   bots and the viewer (wider, more injection surface on public repos).
-2. **Observed `gh pr create` ownership.** Recommended: yes, ranked
-   between explicit and auto, behind the `autoOwnership` setting. It
-   relies on reading thread events after the turn, which
-   `github-pr-status` already does.
-3. **Wake on CI pass?** Recommended: `after-failure`, so a pass wakes the
-   thread only after a reported failure. The agent learns its fix worked,
-   and a clean first run makes no noise. Alternatives: `always`, as in
-   the brief, or `never`.
-4. **Daily cap per PR.** Recommended: 6 wakes in a rolling 24 h.
-5. **Owner archived, or a child worker that has stopped.** Recommended:
-   - archived or deleted → hand the PR to the nearest eligible ancestor,
-     and drop it if there is none;
-   - a stopped child → wake the child, since it has the context and its
-     reply reaches the parent.
-
-   The brief said to stop watching when the owner is archived.
-   Alternatives: stop as in the brief, or always hand to the parent once
-   the child is stopped.
-6. **Draft PRs.** Recommended: watch them the same as ready PRs, since
-   agents often open drafts and CI runs on them.
-7. **Hard dependency on `github-pr-status`.** Recommended: soft. Without
-   it, discovery, observed and auto claims are off and a status explains
-   why, but `watch --pr <url>` still works.
-8. **Message excerpts.** Recommended: a 160-char cleaned excerpt for
-   review bodies and conversation comments, and none for inline comments.
-   Alternative: links only, with no third-party text in the turn at all.
+- **D1. Comment authors.** Repo owners, org members and collaborators
+  (`OWNER`, `MEMBER`, `COLLABORATOR`), plus the review bots Copilot,
+  CodeRabbit, Claude and Codex. Other bots are ignored, and the viewer
+  login is always dropped. The bot list is the `botAuthors` setting,
+  pinned and checked in [New feedback](#new-feedback).
+- **D2. Observed ownership.** Kept: `gh pr create` and the GitHub MCP
+  `create_pull_request` call claim the PR. Behind `autoOwnership`.
+- **D3. CI pass.** Always wakes the thread, as does a failure. At most
+  once per head SHA, within the daily cap. The `wakeOnPass` setting and
+  the `last_ci` column from v1 are removed.
+- **D4. Daily cap.** 6 wakes per PR in a rolling 24 h
+  (`dailyCapPerPr`).
+- **D5. Archived owner.** Hand the PR to the nearest eligible ancestor,
+  and drop it if there is none. A stopped child is still woken.
+- **D6. Draft PRs.** Watched the same as ready PRs.
+- **D7. `github-pr-status`.** A soft dependency. Without it, discovery
+  and the observed and auto claims are off and a status says why;
+  `watch --pr <url>` still works.
+- **D8. Excerpts.** A cleaned 160-char excerpt for review bodies and
+  conversation comments, marked untrusted. Inline comments are counted,
+  not quoted.
+- **Tool name.** `pr_watch`.
 
 ## History
 
-- **v1 (this draft)**: written from the starting brief. Checked against
+- **v1**: written from the starting brief. Checked against
   bb-app 0.48.0, plugin SDK 0.6.94, the bundled `github-pr-status`, and
   Nudger's `continuation.ts` and `running-work.ts`. Changes from the
   brief:
@@ -801,4 +813,11 @@ alternative.
     which can't tell side chats apart.
   - **All state is in SQLite**, and the off switch is merged into
     `unwatch`.
-  - **An archived owner hands the PR to its parent** (Q5).
+  - **An archived owner hands the PR to its parent** (D5).
+- **v1.1 (this draft)**: the user answered the open questions
+  ([Decisions](#decisions)). CI passes now always wake the thread, so the
+  `wakeOnPass` setting and the `last_ci` column are gone. Claude
+  (`claude`) and Codex (`chatgpt-codex-connector`) are added to the
+  default `botAuthors`. All four bot logins are checked against GitHub,
+  and only `Bot` authors match the list. The other answers confirm v1's
+  recommended defaults.
