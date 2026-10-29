@@ -1,6 +1,6 @@
 # PR Watcher: technical spec
 
-Status: v1.1, draft. Not built. The user has answered the open questions;
+Status: v1.2, draft. Not built. The user has answered the open questions;
 the answers are in [Decisions](#decisions) and folded into the sections
 below. [History](#history) lists where this draft differs from the
 starting brief.
@@ -324,8 +324,7 @@ A CI report is pending when all of these hold:
 - pass and failure both wake the thread (D3). Failure is any of
   `FAILURE`, `TIMED_OUT`, `CANCELLED`, `ACTION_REQUIRED`,
   `STARTUP_FAILURE`, or an `ERROR`/`FAILURE` status context. Pass is
-  everything else. Each head SHA is reported at most once, and the daily
-  cap applies.
+  everything else. Each head SHA is reported at most once.
 
 This is "first settled observation per head SHA", not the brief's
 "pending → settled edge". At the 5-min cadence a short CI run can start
@@ -402,7 +401,7 @@ All of these, read just before sending:
   measured from when the plugin saw it go idle (the event, or the first
   poll after a restart). This leaves the user a moment to type before
   the agent restarts.
-- The thread is not in `thread_off`, and the PR is under its daily cap.
+- The thread is not in `thread_off`.
 
 This is a negative test, as in Nudger, rather than `status === "idle"`.
 It is not yet known what `status` and `runtime.displayStatus` report for
@@ -495,7 +494,7 @@ Each command takes `--json`.
 
 | Command | Does |
 | --- | --- |
-| `status [thread]` | The thread's bindings: PR, `claimedBy`, since, head SHA, CI state, pending items, held reason, last delivery, today's count, off flag. With no thread and no calling thread, lists every binding |
+| `status [thread]` | The thread's bindings: PR, `claimedBy`, since, head SHA, CI state, pending items, held reason, last delivery, off flag. With no thread and no calling thread, lists every binding |
 | `watch [thread] [--pr <url>]` | Explicit `user` claim. Same rules and results as the tool, and takes the thread out of `thread_off` |
 | `unwatch [thread]` | Drops the thread's bindings and adds it to `thread_off` |
 
@@ -505,7 +504,6 @@ Each command takes `--json`.
 | --- | --- | --- | --- |
 | `instructionLine` | string | "Check the failures and comments and fix what's needed locally. Don't push, reply on GitHub or request reviewers without asking the user first." | Last line of every message. Max 500 chars |
 | `botAuthors` | string | `copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector` | Comma-separated bot logins whose feedback counts (D1). A trailing `[bot]` is stripped, so the REST form works too. Only GraphQL `Bot` authors match |
-| `dailyCapPerPr` | number | 6 | Wakes per PR in a rolling 24 h. When reached, items keep accumulating and `status` shows `capped` |
 | `idleGraceSeconds` | number | 60 | 0–600 |
 | `autoOwnership` | boolean | true | Observed and auto claims |
 
@@ -552,7 +550,7 @@ CREATE TABLE seen_items (         -- feedback delivered or baselined
   PRIMARY KEY (pr_url, item_id)
 );
 
-CREATE TABLE deliveries (         -- dedup audit and daily cap
+CREATE TABLE deliveries (         -- at-most-once recovery and last delivery for status
   id TEXT NOT NULL PRIMARY KEY,
   pr_url TEXT NOT NULL,
   thread_id TEXT NOT NULL,
@@ -616,9 +614,10 @@ Startup reconcile, after the handlers are registered:
   wrote. The filter is set by D1.
 - **Self-wake loop.** Items by the `gh` viewer login are always dropped
   (see [Triggers](#triggers)).
-- **Cost.** Every wake starts a paid turn. Mitigations: the daily cap,
-  at-most-once delivery, the hold while the owner is busy, and one message
-  per batch.
+- **Cost.** Every wake starts a paid turn, and there is no daily cap
+  (D4). Repeat wakes are prevented by once-per-head-SHA CI reports and
+  the comment cursor (`seen_items`). Other mitigations: at-most-once
+  delivery, the hold while the owner is busy, and one message per batch.
 - **Who can claim.** Any agent in an eligible thread can claim any PR URL,
   and so can anyone who can run the CLI. bb has a single user, so the
   plugin adds no access checks. Claims are visible in `status`, and the
@@ -678,7 +677,6 @@ under `node --test`.
   - a `sending` row at startup counts as sent;
   - an owner in `error`, and a stopped child, against the "owner free"
     rules;
-  - the daily cap;
   - the dispatch hook admits only the current delivery on an idle
     `start-turn`, rejects our queued rows, and ignores other messages.
 - **Polling:**
@@ -755,10 +753,11 @@ into the sections above.
 - **D2. Observed ownership.** Kept: `gh pr create` and the GitHub MCP
   `create_pull_request` call claim the PR. Behind `autoOwnership`.
 - **D3. CI pass.** Always wakes the thread, as does a failure. At most
-  once per head SHA, within the daily cap. The `wakeOnPass` setting and
+  once per head SHA. The `wakeOnPass` setting and
   the `last_ci` column from v1 are removed.
-- **D4. Daily cap.** 6 wakes per PR in a rolling 24 h
-  (`dailyCapPerPr`).
+- **D4. No daily cap.** Wakes are not limited per PR or per day.
+  Once-per-head-SHA CI reports and the comment cursor stop repeat
+  wakes. This replaces the first answer, a cap of 6 per rolling 24 h.
 - **D5. Archived owner.** Hand the PR to the nearest eligible ancestor,
   and drop it if there is none. A stopped child is still woken.
 - **D6. Draft PRs.** Watched the same as ready PRs.
@@ -814,10 +813,14 @@ into the sections above.
   - **All state is in SQLite**, and the off switch is merged into
     `unwatch`.
   - **An archived owner hands the PR to its parent** (D5).
-- **v1.1 (this draft)**: the user answered the open questions
+- **v1.1**: the user answered the open questions
   ([Decisions](#decisions)). CI passes now always wake the thread, so the
   `wakeOnPass` setting and the `last_ci` column are gone. Claude
   (`claude`) and Codex (`chatgpt-codex-connector`) are added to the
   default `botAuthors`. All four bot logins are checked against GitHub,
   and only `Bot` authors match the list. The other answers confirm v1's
   recommended defaults.
+- **v1.2 (this draft)**: the user dropped the daily cap (D4). The
+  `dailyCapPerPr` setting, the hold reason and its test are removed. The
+  `deliveries` table stays for at-most-once recovery and for `status`.
+  Once-per-head-SHA CI dedupe and the comment cursor are unchanged.
