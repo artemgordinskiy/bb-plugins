@@ -17,7 +17,7 @@ flowchart LR
 
 ## Requirements
 
-- bb 0.48.1 or later.
+- bb 0.48.0 or later.
 - `gh`, logged in, on the machine that holds the checkout. The plugin has no
   token of its own.
 - github.com. Other hosts aren't supported.

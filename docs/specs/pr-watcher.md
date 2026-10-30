@@ -95,12 +95,14 @@ All work on one PR runs through a per-PR queue in memory: claims,
 send, and its outcome). Two operations on the same PR never interleave.
 Different PRs run in parallel.
 
-### SDK surfaces used (plugin SDK 0.6.104)
+### SDK surfaces used (plugin SDK 0.6.94)
 
 Checked against the SDK's `bundled-types/bb-plugin-sdk.d.ts` and the
-bundled bb-app 0.48.1 server (`start-server.js`). The `.d.ts` declarations
-are the test contract: the fake SDK in tests rejects arguments of the
-wrong shape.
+bundled bb-app 0.48.1 server (`start-server.js`). The plugin now targets
+bb-app 0.48.0 and SDK 0.6.94: it typechecks and passes its tests there, and
+every surface below is declared in both SDK versions, but the 0.48.0 server
+code itself wasn't read. The `.d.ts` declarations are the test contract:
+the fake SDK in tests rejects arguments of the wrong shape.
 
 | Need | Surface |
 | --- | --- |
@@ -127,7 +129,7 @@ threads only.
 `package.json`:
 
 ```json
-"engines": { "bb": ">=0.48.1", "bbPluginSdk": ">=0.6.104" },
+"engines": { "bb": ">=0.48.0", "bbPluginSdk": ">=0.6.94" },
 "bb": {
   "name": "PR Watcher",
   "description": "Wakes the thread that owns a pull request when CI settles or new review feedback lands.",
@@ -799,7 +801,7 @@ through `emitThreadEvent`, the tool through `callAgentTool`, and
 `@get-bb/plugin-sdk/testing/host` and a fake `gh` on `PATH`. Tests run
 under `node --test`.
 
-The fake SDK checks argument shapes against the 0.6.104 declarations:
+The fake SDK checks argument shapes against the 0.6.94 declarations:
 `environments.get` and `hosts.get` throw on a bare string, and
 `threads.list` throws on a non-boolean `archived` or `includeHidden`.
 
@@ -947,7 +949,7 @@ Risk: the plugin depends on experimental surfaces:
   `bb.hosts.experimental_client`;
 - `experimental_environment.removed`.
 
-Any of these can change in a bb release. Pin `engines` to `bb >=0.48.1`,
+Any of these can change in a bb release. Pin `engines` to `bb >=0.48.0`,
 and re-check the surfaces table on each bb upgrade before bumping.
 
 Only a live install can verify:
@@ -1082,3 +1084,6 @@ Each draft's full text is in this file's git history.
     delivery history table.
   - Two cadence rows, one binding per PR (D13), and `work.ts` folded into
     `delivery.ts`.
+- **v1.5.1**: lowered `engines` to bb-app 0.48.0 and plugin SDK 0.6.94,
+  because the `bb-work` server runs 0.48.0 and refused the install. The
+  plugin's SDK surfaces are declared in both SDK versions.
