@@ -81,7 +81,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
       type: "string",
       label: "Instruction line",
       description: "The action line near the end of every message. One line, up to 300 characters. Reload the plugin after changing it.",
-      default: "Check the failures and comments and fix what's needed locally.",
+      default: "Check the failures and comments and propose fixes. Don't change anything until the user agrees.",
     },
     botAuthors: {
       type: "string",

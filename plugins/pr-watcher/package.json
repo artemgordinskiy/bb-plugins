@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-pr-watcher",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Wakes the thread that owns a pull request when CI settles or new review feedback lands.",
   "license": "MIT",
   "type": "module",

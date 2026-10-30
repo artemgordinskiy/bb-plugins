@@ -1,6 +1,6 @@
 # PR Watcher: technical spec
 
-Status: v1.5, shipped as 0.1.0. The user chose a much simpler v1 after
+Status: v1.5.2, shipped as 0.1.1. The user chose a much simpler v1 after
 reviewing complexity with Claude and Codex. No questions are open.
 [Decisions](#decisions) records the choices and reversals, and
 [History](#history) lists where each draft differs from the one before.
@@ -55,7 +55,7 @@ Checked on 2026-10-30 against bb-app 0.48.1 and plugin SDK 0.6.104:
      - @coderabbitai reviewed: 3 inline comments. https://github.com/acme/api/pull/42#pullrequestreview-…
    End of GitHub data.
 
-   Check the failures and comments and fix what's needed locally.
+   Check the failures and comments and propose fixes. Don't change anything until the user agrees.
    Don't push, reply on GitHub or request reviewers without asking the user first.
    ```
 
@@ -627,7 +627,7 @@ Each command takes `--json`.
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `instructionLine` | string | "Check the failures and comments and fix what's needed locally." | The action line near the end of every message. Cleaned to one line, max 300 chars. It can't remove the fixed safety line that follows it |
+| `instructionLine` | string | "Check the failures and comments and propose fixes. Don't change anything until the user agrees." | The action line near the end of every message. Cleaned to one line, max 300 chars. It can't remove the fixed safety line that follows it |
 | `botAuthors` | string | `copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector` | Comma-separated bot logins whose reviews count (D1). A trailing `[bot]` is stripped, so the REST form works too. Only GraphQL `Bot` authors match, and only through reviews |
 
 ## Message format
@@ -1087,3 +1087,5 @@ Each draft's full text is in this file's git history.
 - **v1.5.1**: lowered `engines` to bb-app 0.48.0 and plugin SDK 0.6.94,
   because the `bb-work` server runs 0.48.0 and refused the install. The
   plugin's SDK surfaces are declared in both SDK versions.
+- **v1.5.2**: the default `instructionLine` now asks the agent to propose
+  fixes and wait for the user, instead of fixing locally on its own.

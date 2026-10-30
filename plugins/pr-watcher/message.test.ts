@@ -17,7 +17,7 @@ const input = (over: Partial<MessageInput> = {}): MessageInput => ({
   items: [],
   excerpts: new Map(),
   mayBeMissing: false,
-  instructionLine: "Check the failures and comments and fix what's needed locally.",
+  instructionLine: "Check the failures and comments and propose fixes. Don't change anything until the user agrees.",
   ...over,
 });
 
@@ -104,7 +104,7 @@ test("the example from the spec", () => {
       `  - @coderabbitai reviewed: 3 inline comments. ${PR}#pullrequestreview-2`,
       CLOSE,
       "",
-      "Check the failures and comments and fix what's needed locally.",
+      "Check the failures and comments and propose fixes. Don't change anything until the user agrees.",
       SAFETY_LINE,
     ].join("\n"),
   );

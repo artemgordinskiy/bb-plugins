@@ -613,6 +613,14 @@ async function wakesFor(items: ReturnType<typeof comment>[], settings: Record<st
 
 const bot = { authorIsBot: true, association: "NONE" };
 
+test("the default instruction asks the agent to propose fixes and wait for the user", async () => {
+  await watching(async (plugin) => {
+    plugin.setSnapshot({ ci: running, items: [comment("c1")] });
+    await plugin.poll();
+    assert.match(plugin.sentText(), /^Check the failures and comments and propose fixes\. Don't change anything until the user agrees\.$/m);
+  });
+});
+
 test("a comment from the viewer never wakes, whatever the case of the login", async () => {
   assert.equal(await wakesFor([comment("c1", { author: "me" }), comment("c2", { author: "ME" })]), 0);
 });

@@ -41,7 +41,7 @@ thread, `status` lists every watch.
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| `instructionLine` | `Check the failures and comments and fix what's needed locally.` | The action line near the end of every message. Cleaned to one line of at most 300 characters. The safety line after it can't be removed |
+| `instructionLine` | `Check the failures and comments and propose fixes. Don't change anything until the user agrees.` | The action line near the end of every message. Cleaned to one line of at most 300 characters. The safety line after it can't be removed |
 | `botAuthors` | `copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector` | Comma-separated bot logins whose reviews count. A trailing `[bot]` is ignored |
 
 ```sh
