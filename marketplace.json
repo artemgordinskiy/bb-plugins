@@ -58,6 +58,28 @@
           "tagPrefix": "telegram-notify/"
         }
       }
+    },
+    {
+      "id": "pr-watcher",
+      "displayName": "PR Watcher",
+      "description": "Wakes the thread that owns a pull request when CI settles or new review feedback lands.",
+      "icon": "GitPullRequest",
+      "tags": [
+        "github",
+        "pull-requests"
+      ],
+      "author": {
+        "name": "Artem Gordinskiy",
+        "github": "artemgordinskiy"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/artemgordinskiy/bb-plugins.git",
+          "subdir": "plugins/pr-watcher",
+          "range": "^0.1.0",
+          "tagPrefix": "pr-watcher/"
+        }
+      }
     }
   ]
 }

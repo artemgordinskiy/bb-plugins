@@ -1,6 +1,6 @@
 # PR Watcher: technical spec
 
-Status: v1.5, approved to build. The user chose a much simpler v1 after
+Status: v1.5, shipped as 0.1.0. The user chose a much simpler v1 after
 reviewing complexity with Claude and Codex. No questions are open.
 [Decisions](#decisions) records the choices and reversals, and
 [History](#history) lists where each draft differs from the one before.
