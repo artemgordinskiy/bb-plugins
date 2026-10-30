@@ -82,7 +82,7 @@ Run `bb pr-watcher status` and read `held`:
 | Held | Meaning |
 | --- | --- |
 | `thread off` | The user ran `unwatch` |
-| `owner not eligible` | The owner can't be woken |
+| `owner not eligible` | The owner can't be woken. If it was archived or deleted, each poll retries the handoff until the lookup works |
 | `owner in error` | The owner's last turn failed |
 | `owner busy` | The owner is running or has queued work or a pending question |
 | `work running` | A child or workflow step under the owner is running |

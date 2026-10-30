@@ -80,7 +80,7 @@ test("the checkout check runs once, before the final owner check", async () => {
     plugin.setSnapshot({ ci: failing });
     plugin.world.log.length = 0;
     await plugin.poll();
-    assert.deepEqual(plugin.world.log, ["host:snapshot", "host:checkout", "threads.list:ids", "threads.list:inventory", "threads.send"]);
+    assert.deepEqual(plugin.world.log, ["threads.list:ids", "host:snapshot", "host:checkout", "threads.list:ids", "threads.list:inventory", "threads.send"]);
   });
 });
 
@@ -455,7 +455,7 @@ test("no pending report or items: no checkout check and no send", async () => {
     plugin.setSnapshot({ ci: running });
     plugin.world.log.length = 0;
     await plugin.poll();
-    assert.deepEqual(plugin.world.log, ["host:snapshot"]);
+    assert.deepEqual(plugin.world.log, ["threads.list:ids", "host:snapshot"]);
   });
 });
 

@@ -248,6 +248,86 @@ test("the handoff skips a parent that isn't eligible", async () => {
   });
 });
 
+test("a failed parent lookup holds the watch, and the next poll finishes the handoff", async () => {
+  await withPlugin({}, async (plugin) => {
+    addThread(plugin, PARENT);
+    addThread(plugin, CHILD, { parentThreadId: PARENT });
+    await plugin.claim({}, CHILD);
+    plugin.settle();
+    plugin.setSnapshot({ ci: running, items: [comment("c1")] });
+    plugin.world.unreadable.add(PARENT);
+
+    await plugin.removeThread("thread.archived", CHILD);
+    await plugin.poll();
+    const [row] = (await plugin.status(CHILD)).bindings;
+    assert.equal(row?.held, "owner not eligible");
+    assert.equal(row?.pendingItems, 1);
+
+    plugin.world.unreadable.clear();
+    await plugin.poll();
+    assert.equal((await plugin.status(CHILD)).bindings.length, 0);
+    assert.equal((await plugin.status(PARENT)).bindings[0]?.claimedBy, "agent");
+    assert.deepEqual(plugin.world.sends.map((send) => send.threadId), [PARENT]);
+  });
+});
+
+test("a retried handoff ends the watch when no eligible parent is left", async () => {
+  await withPlugin({}, async (plugin) => {
+    addThread(plugin, PARENT);
+    addThread(plugin, CHILD, { parentThreadId: PARENT });
+    await plugin.claim({}, CHILD);
+    plugin.world.unreadable.add(PARENT);
+    await plugin.removeThread("thread.archived", CHILD);
+
+    plugin.world.unreadable.clear();
+    plugin.world.threads.delete(PARENT);
+    await plugin.poll();
+    assert.equal((await plugin.status(CHILD)).bindings.length, 0);
+    assert.equal(plugin.world.sends.length, 0);
+  });
+});
+
+test("a deleted owner whose lookup failed ends the watch at the next poll", async () => {
+  await withPlugin({}, async (plugin) => {
+    addThread(plugin, PARENT);
+    addThread(plugin, CHILD, { parentThreadId: PARENT });
+    await plugin.claim({}, CHILD);
+    plugin.world.unreadable.add(PARENT);
+    await plugin.removeThread("thread.deleted", CHILD);
+
+    plugin.world.unreadable.clear();
+    await plugin.poll();
+    assert.equal((await plugin.status(CHILD)).bindings.length, 0);
+    assert.equal((await plugin.status(PARENT)).bindings.length, 0);
+  });
+});
+
+test("an owner archived while the plugin was down is handled by the next poll if startup couldn't read it", async () => {
+  await withPlugin({}, async (plugin) => {
+    addThread(plugin, PARENT);
+    addThread(plugin, CHILD, { parentThreadId: PARENT });
+    await plugin.claim({}, CHILD);
+    plugin.world.threads.set(CHILD, threadRow({ id: CHILD, parentThreadId: PARENT, archivedAt: plugin.clock.now }));
+    plugin.world.unreadable.add(CHILD);
+    await plugin.restart();
+    assert.equal((await plugin.status(CHILD)).bindings.length, 1);
+
+    plugin.world.unreadable.clear();
+    await plugin.poll();
+    assert.equal((await plugin.status(PARENT)).bindings.length, 1);
+  });
+});
+
+test("a failed owner read doesn't make the poll run on every tick", async () => {
+  await watching(async (plugin) => {
+    plugin.world.unreadable.add(THREAD);
+    await plugin.poll();
+    plugin.world.log.length = 0;
+    await plugin.watcher.tick();
+    assert.deepEqual(plugin.world.log, []);
+  });
+});
+
 test("the watch ends when the nearest eligible parent is in another environment", async () => {
   await withPlugin({}, async (plugin) => {
     addThread(plugin, "thr_grandparent");

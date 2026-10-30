@@ -224,7 +224,9 @@ thread list entry:
   parent (the `parentThreadId` chain). If that thread is in the PR's
   environment, the binding moves to it, with `claimedBy` kept. Otherwise,
   or with no eligible parent, the watch ends (D5). It doesn't look further
-  up.
+  up. A failed read keeps the binding, held as `owner not eligible`, and
+  each poll tries again. Once the read works, the same rule applies. A
+  deleted owner is gone from `threads.list` by then, so its watch ends.
 - **Owner unarchived**: no effect. Use `watch`.
 - **The checkout moves off a branch-bound PR**: the watch ends. See
   [Branch identity](#branch-identity).
@@ -816,6 +818,8 @@ The fake SDK checks argument shapes against the 0.6.104 declarations:
   - owner archived with the nearest eligible parent in another
     environment, or none → the watch ends, and nothing is sent;
   - an owner archived while the plugin was down is handled at startup;
+  - a failed lookup holds the watch and the next poll finishes the handoff,
+    or ends the watch when no eligible parent is left;
   - merged or closed → dropped;
   - handoff to a parent, then the environment is removed → dropped;
   - `thread_off` refuses the tool, and `watch` clears it.

@@ -143,6 +143,8 @@ export async function boot(options: BootOptions = {}) {
     queue: [] as Row[],
     sends: [] as SendArgs[],
     deletes: [] as DeleteArgs[],
+    /** Threads whose read throws, for tests of a failed lookup. */
+    unreadable: new Set<string>(),
     /** What happens around the send, in order, for tests of the ordering. */
     log: [] as string[],
   };
@@ -150,6 +152,7 @@ export async function boot(options: BootOptions = {}) {
   const stubbed = <T extends { sdk: { stub(path: string, implementation: (...args: never[]) => unknown): void } }>(harness: T): T => {
     harness.sdk.stub("threads.list", async (args: ListArgs) => {
       world.log.push(args.threadIds ? "threads.list:ids" : "threads.list:inventory");
+      if (args.threadIds?.some((id) => world.unreadable.has(id))) throw new Error("coordinator busy");
       const rows = [...world.threads.values()].filter((row) => row["deletedAt"] === null);
       if (args.threadIds) return rows.filter((row) => args.threadIds?.includes(row.id));
       return rows.filter(

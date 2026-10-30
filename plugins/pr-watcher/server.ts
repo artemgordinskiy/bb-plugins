@@ -153,10 +153,40 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
     return thread ?? null;
   };
 
+  /** Runs inside the PR's queue. A failed read throws and leaves the binding as it was. */
+  async function handOff(binding: Binding, owner: ThreadFacts): Promise<void> {
+    const { prUrl } = binding;
+    const target = await findHandoff(owner, binding.environmentId, loadFacts);
+    if (target) {
+      bb.log.info(`Handing ${prUrl} from ${owner.id} to ${target}.`);
+      store.moveOwner(prUrl, target);
+      held.delete(prUrl);
+    } else {
+      bb.log.info(`Owner ${owner.id} of ${prUrl} is gone; ending the watch.`);
+      end(prUrl);
+    }
+  }
+
+  /** Finishes a handoff that a failed read left open. A read that fails again is retried by the next poll. */
+  async function settleOwner(binding: Binding): Promise<void> {
+    const { prUrl, threadId } = binding;
+    try {
+      const owner = await loadFacts(threadId);
+      // threads.list leaves a deleted thread out, so its parents can't be walked.
+      if (!owner) end(prUrl);
+      else if (owner.archivedAt !== null || owner.deletedAt !== null) await handOff(binding, owner);
+    } catch (error) {
+      bb.log.warn(`Owner check for ${prUrl} failed: ${describeError(error)}`);
+    }
+  }
+
   async function poll(prUrl: string): Promise<void> {
-    const binding = store.binding(prUrl);
     const pr = parsePrUrl(prUrl);
-    if (!binding || !pr) return;
+    const claimed = store.binding(prUrl);
+    if (!claimed || !pr) return;
+    await settleOwner(claimed);
+    const binding = store.binding(prUrl);
+    if (!binding) return;
     const environment = await readEnvironment(binding.environmentId);
     if (!environment.ready) {
       held.set(prUrl, "environment not ready");
@@ -282,22 +312,13 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
     });
   }
 
-  /** A failed read keeps the watch: nothing is known to have changed. */
+  /** A failed read keeps the watch, and the next poll tries again. */
   async function ownerGone(owner: ThreadFacts): Promise<void> {
     await Promise.all(
       store.forThread(owner.id).map(({ prUrl }) =>
         enqueue(prUrl, async () => {
           const binding = store.binding(prUrl);
-          if (binding?.threadId !== owner.id) return;
-          const target = await findHandoff(owner, binding.environmentId, loadFacts);
-          if (target) {
-            bb.log.info(`Handing ${prUrl} from ${owner.id} to ${target}.`);
-            store.moveOwner(prUrl, target);
-            held.delete(prUrl);
-          } else {
-            bb.log.info(`Owner ${owner.id} of ${prUrl} is gone; ending the watch.`);
-            end(prUrl);
-          }
+          if (binding?.threadId === owner.id) await handOff(binding, owner);
         }).catch((error: unknown) => {
           bb.log.error(`Owner handoff for ${prUrl} failed: ${describeError(error)}`);
         }),
