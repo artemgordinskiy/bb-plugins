@@ -946,7 +946,13 @@ test("status with no thread lists every watch, and an idle thread says so", asyn
     await plugin.claim({ pr: OTHER_PR }, SECOND);
 
     assert.equal(statusOutputSchema.parse(JSON.parse((await plugin.cli(["status", "--json"])).stdout ?? "")).bindings.length, 2);
-    assert.equal((await plugin.cli(["status", "thr_nothing"])).stdout, "no pull requests watched\n");
+    assert.equal((await plugin.cli(["status", "thr_nothing"])).stdout, "thr_nothing is watching no pull requests\n");
+  });
+});
+
+test("status with no thread and no watches says nothing is watched", async () => {
+  await withPlugin({}, async (plugin) => {
+    assert.equal((await plugin.cli(["status"])).stdout, "no pull requests watched\n");
   });
 });
 

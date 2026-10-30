@@ -421,7 +421,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
       ];
       return parts.join(" · ");
     });
-    if (lines.length === 0) lines.push("no pull requests watched");
+    if (lines.length === 0) lines.push(output.thread ? `${output.thread} is watching no pull requests` : "no pull requests watched");
     if (output.omitted > 0) lines.push(`+${output.omitted} more`);
     if (output.off) lines.push("off: run `bb pr-watcher watch` to turn it back on");
     return lines;

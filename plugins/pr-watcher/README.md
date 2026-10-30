@@ -30,11 +30,12 @@ it to. Nothing is watched unless the agent or you ask.
 ```sh
 bb pr-watcher watch                # claim the checkout's PR for this thread
 bb pr-watcher watch thr_abc --pr https://github.com/acme/api/pull/42
-bb pr-watcher status               # what's watched, and why a wake is held
+bb pr-watcher status               # this thread's watches, and why a wake is held
 bb pr-watcher unwatch thr_abc      # stop, and keep the thread off until `watch`
 ```
 
-Each command takes `--json`. `[thread]` defaults to the calling thread.
+Each command takes `--json`. `[thread]` defaults to the calling thread. Outside a
+thread, `status` lists every watch.
 
 ## Settings
 
