@@ -118,3 +118,7 @@ export const statusOutputSchema = z.object({
 });
 
 export type StatusOutput = z.infer<typeof statusOutputSchema>;
+
+export const actionOutputSchema = z.object({ ok: z.boolean(), result: z.string() });
+
+export type ActionOutput = z.infer<typeof actionOutputSchema>;
