@@ -15,7 +15,10 @@
       "icon": "GitPullRequest"
     },
     "server": "./server.ts",
-    "host": "./host.ts"
+    "host": "./host.ts",
+    "skills": [
+      "skills"
+    ]
   },
   "scripts": {
     "test": "node --test \"*.test.ts\"",

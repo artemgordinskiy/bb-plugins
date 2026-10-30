@@ -17,6 +17,7 @@ import { type Binding, type ClaimedBy, MIGRATIONS, Store } from "./store.ts";
 import { type CiState, classifyNew, IDLE_POLL_MS, isRelevant, nextPollDelay, parseBotAuthors, readCi } from "./triggers.ts";
 
 const TOOL_NAME = "pr_watch";
+const SKILL_NAME = "pr-watcher";
 const TICK_MS = 5_000;
 const STARTUP_SPREAD_MS = 60_000;
 const LIST_LIMIT = 200;
@@ -457,7 +458,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
   );
 
   bb.agents.configure((ctx) =>
-    ctx.origin.pluginId === null ? { tools: [TOOL_NAME], skills: [], instructions: INSTRUCTIONS } : { tools: [], skills: [] },
+    ctx.origin.pluginId === null ? { tools: [TOOL_NAME], skills: [SKILL_NAME], instructions: INSTRUCTIONS } : { tools: [], skills: [] },
   );
 
   bb.agents.registerTool({

@@ -176,6 +176,7 @@ export async function boot(options: BootOptions = {}) {
 
   const first = createFakePluginHost({
     pluginId: "pr-watcher",
+    agentSkillIds: ["pr-watcher"],
     settings: options.settings ?? {},
     experimental_callHostRpc: async ({ method, input }) => {
       world.log.push(`host:${method}`);

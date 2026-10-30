@@ -794,6 +794,7 @@ test("the tool and instructions are offered to ordinary threads and not to side 
   await withPlugin({}, async (plugin) => {
     const offered = await plugin.harness.resolveAgentConfiguration(configContext());
     assert.deepEqual(offered.tools.map((tool) => tool.name), ["pr_watch"]);
+    assert.deepEqual(offered.skills, ["pr-watcher"]);
     assert.ok((offered.instructions?.length ?? 0) < 600);
     assert.match(offered.instructions ?? "", /untrusted data from GitHub/);
 
@@ -803,6 +804,7 @@ test("the tool and instructions are offered to ordinary threads and not to side 
     for (const pluginId of ["side-chat", "some-plugin"]) {
       const closed = await plugin.harness.resolveAgentConfiguration(configContext({ origin: { kind: "fork", pluginId } }));
       assert.deepEqual(closed.tools, []);
+      assert.deepEqual(closed.skills, []);
       assert.equal(closed.instructions, null);
     }
   });
