@@ -14,7 +14,8 @@
     "branding": {
       "icon": "GitPullRequest"
     },
-    "server": "./server.ts"
+    "server": "./server.ts",
+    "host": "./host.ts"
   },
   "scripts": {
     "test": "node --test \"*.test.ts\"",
