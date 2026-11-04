@@ -4,8 +4,8 @@ import { JSDOM } from "jsdom";
 import { observeTheme, readThemeTokens } from "./theme-dom.ts";
 import { BB_THEME } from "./typography.ts";
 
-function page(t: TestContext, idle = true) {
-  const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>");
+function page(t: TestContext, idle = true, resources?: "usable") {
+  const dom = new JSDOM("<!doctype html><html><head></head><body></body></html>", { resources });
   const { window } = dom;
   const jobs = new Map<number, () => void>();
   let next = 0;
@@ -153,6 +153,84 @@ test("stylesheet links update after load and on href, media, disabled, rel and r
   preload.dispatchEvent(new p.window.Event("load"));
   await p.flushMutations();
   assert.equal(p.jobs.size, 0);
+});
+
+test("only linked plugin styles that can affect the root resample theme tokens", async (t) => {
+  const p = page(t, true, "usable");
+  const rules = p.style("html:root{--font-sans:Override}", true);
+  let disabled = false;
+  const toggles: boolean[] = [];
+  Object.defineProperty(rules, "disabled", {
+    get: () => disabled,
+    set: (value: boolean) => { disabled = value; toggles.push(value); },
+  });
+  let themeFont = "Base";
+  globalThis.getComputedStyle = () => ({
+    fontSize: "16px",
+    getPropertyValue: (name: string) => name === "--font-sans" ? (disabled ? themeFont : "Override") : "",
+  }) as CSSStyleDeclaration;
+  const samples: string[] = [];
+  p.cleanup(observeTheme(() => { samples.push(readThemeTokens().fontSans); }));
+
+  async function attachPluginStylesheet(css: string) {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.dataset.bbPluginCss = "fixture";
+    link.href = `data:text/css,${encodeURIComponent(css)}`;
+    const loaded = new Promise<void>((resolve, reject) => {
+      link.addEventListener("load", () => resolve(), { once: true });
+      link.addEventListener("error", () => reject(new Error("Could not load the fixture stylesheet")), { once: true });
+    });
+    document.head.append(link);
+    await loaded;
+    await p.flushMutations();
+    p.flushJobs();
+    return link;
+  }
+
+  const component = await attachPluginStylesheet(".panel { --font-sans: Scoped; font-size: 22px; }");
+  component.remove();
+  await p.flushMutations();
+  p.flushJobs();
+  assert.deepEqual(samples, []);
+  assert.deepEqual(toggles, []);
+
+  themeFont = "Plugin theme";
+  const theme = await attachPluginStylesheet("@media all { html { --site-font: Plugin theme; } }");
+  assert.deepEqual(samples, ["Plugin theme"]);
+  themeFont = "Base";
+  theme.remove();
+  await p.flushMutations();
+  p.flushJobs();
+  assert.deepEqual(samples, ["Plugin theme", "Base"]);
+  assert.deepEqual(toggles, [true, false, true, false]);
+});
+
+test("an unreadable plugin stylesheet still resamples on load and removal", async (t) => {
+  const p = page(t);
+  let samples = 0;
+  p.cleanup(observeTheme(() => { samples++; }));
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.dataset.bbPluginCss = "opaque";
+  document.head.append(link);
+  await p.flushMutations();
+  p.flushJobs();
+  assert.equal(samples, 0);
+
+  const unreadable = {
+    get cssRules() { throw new p.window.DOMException("Stylesheet rules are opaque", "SecurityError"); },
+  };
+  Object.defineProperty(link, "sheet", { configurable: true, value: unreadable });
+  link.dispatchEvent(new p.window.Event("load"));
+  p.flushJobs();
+  assert.equal(samples, 1);
+
+  link.remove();
+  Object.defineProperty(link, "sheet", { value: null });
+  await p.flushMutations();
+  p.flushJobs();
+  assert.equal(samples, 2);
 });
 
 test("abort and cleanup cancel queued work and detach media and link listeners, including rAF fallback", async (t) => {

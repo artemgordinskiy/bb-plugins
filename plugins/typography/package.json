@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-typography",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Typography for bb: chat reading text, the interface and code fonts, with bundled and device fonts.",
   "license": "MIT",
   "type": "module",

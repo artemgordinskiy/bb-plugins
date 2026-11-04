@@ -41,45 +41,94 @@ export function readThemeTokens(): ThemeTokens {
 // Imports may contain declarations we cannot see.
 const themeDeclarations = /--(?:font-(?:sans|mono|terminal)|text-(?:2xs|xs|sm|base|lg|xl|2xl))\s*:|(?:^|[{}])[^{}]*(?::root|\bhtml\b|\.dark\b|\.light\b)[^{}]*\{[^{}]*(?:--[\w-]+|font-size)\s*:|@import\b/i;
 const rootAttributes = ["class", "style", "data-theme"];
+const pluginStylesheetMarker = "data-bb-plugin-css";
 
-function isStylesheet(node: Element): boolean {
+function isStylesheet(node: Element): node is HTMLLinkElement {
   return node.localName === "link" && node.getAttribute("rel")?.toLowerCase().split(/\s+/).includes("stylesheet") === true;
 }
 
-function relevantNode(node: Node): boolean {
+function hasRootTypographyRules(rules: CSSRuleList): boolean {
+  return Array.from(rules).some((rule) => {
+    if ("styleSheet" in rule) {
+      const imported = (rule as CSSImportRule).styleSheet;
+      return !imported || hasRootTypographyRules(imported.cssRules);
+    }
+    if ("selectorText" in rule && "style" in rule) {
+      const { selectorText, style, cssRules: nested } = rule as CSSStyleRule;
+      if (!document.documentElement.matches(selectorText)) return false;
+      return Boolean(nested?.length) || Array.from(style).some(
+        (name) => name.startsWith("--") || name === "font" || name === "font-size" || name === "all",
+      );
+    }
+    if ("cssRules" in rule) return hasRootTypographyRules((rule as CSSGroupingRule).cssRules);
+    // Generated Tailwind utility registrations do not set BB theme tokens.
+    return /^@property\s+--(?!tw-)/i.test(rule.cssText);
+  });
+}
+
+function stylesheetMayAffectTheme(sheet: CSSStyleSheet | null | undefined): boolean {
+  if (sheet === undefined) return false;
+  if (sheet === null) return true;
+  try {
+    return hasRootTypographyRules(sheet.cssRules);
+  } catch {
+    // Cross-origin imports may apply to the root even when their rules are opaque.
+    return true;
+  }
+}
+
+type LinkedStylesheetChange = (link: HTMLLinkElement) => boolean;
+
+function relevantNode(node: Node, linkedStylesheetChangesTheme: LinkedStylesheetChange): boolean {
   if (node instanceof Element) {
     if (node.hasAttribute("data-typography")) return false;
-    if (isStylesheet(node)) return true;
+    if (isStylesheet(node)) return linkedStylesheetChangesTheme(node);
     if (node.localName === "style") return themeDeclarations.test(node.textContent ?? "");
-    return Array.from(node.children).some(relevantNode);
+    return Array.from(node.children).some((child) => relevantNode(child, linkedStylesheetChangesTheme));
   }
   return themeDeclarations.test(node.textContent ?? "");
 }
 
-function changesTheme(record: MutationRecord): boolean {
+function changesTheme(record: MutationRecord, linkedStylesheetChangesTheme: LinkedStylesheetChange): boolean {
   if (record.target === document.documentElement) return true;
   const target = record.target instanceof Element ? record.target : record.target.parentElement;
   if (target?.closest("[data-typography]")) return false;
   if (record.type === "attributes") {
-    return target !== null && (isStylesheet(target) ||
+    if (target === null) return false;
+    if (isStylesheet(target) ||
       // Also catch a stylesheet link changing its rel away from stylesheet.
       (target.localName === "link" && record.attributeName === "rel" &&
-        record.oldValue?.toLowerCase().split(/\s+/).includes("stylesheet") === true) ||
-      (target.localName === "style" && relevantNode(target)));
+        record.oldValue?.toLowerCase().split(/\s+/).includes("stylesheet") === true)) {
+      return linkedStylesheetChangesTheme(target as HTMLLinkElement);
+    }
+    return target.localName === "style" && relevantNode(target, linkedStylesheetChangesTheme);
   }
   if (record.type === "characterData") {
     return target?.localName === "style" &&
-      (relevantNode(target) || themeDeclarations.test(record.oldValue ?? ""));
+      (relevantNode(target, linkedStylesheetChangesTheme) || themeDeclarations.test(record.oldValue ?? ""));
   }
-  return (target?.localName === "style" && relevantNode(target)) ||
-    [...record.addedNodes, ...record.removedNodes].some(relevantNode);
+  return (target?.localName === "style" && relevantNode(target, linkedStylesheetChangesTheme)) ||
+    [...record.addedNodes, ...record.removedNodes].some((node) => relevantNode(node, linkedStylesheetChangesTheme));
 }
 
-/** Only genuine theme changes schedule a read, after the interaction task. */
+/** Defer theme reads until after the interaction task. */
 export function observeTheme(listener: () => void, signal?: AbortSignal): () => void {
   if (signal?.aborted) return () => {};
   let pending: number | undefined;
   let stopped = false;
+  const pluginSheets = new WeakMap<HTMLLinkElement, CSSStyleSheet | null>();
+  for (const link of document.head.querySelectorAll<HTMLLinkElement>(`link[${pluginStylesheetMarker}]`)) {
+    if (isStylesheet(link) && link.sheet !== null) pluginSheets.set(link, link.sheet);
+  }
+  function linkedStylesheetChangesTheme(link: HTMLLinkElement, loaded = false): boolean {
+    if (!link.hasAttribute(pluginStylesheetMarker)) return true;
+    const previous = pluginSheets.get(link);
+    // A new plugin link cannot affect the theme until it loads. Keep its last
+    // sheet so removal or replacement can still reveal the underlying theme.
+    const current = link.sheet ?? (loaded ? null : previous);
+    if (current !== undefined) pluginSheets.set(link, current);
+    return stylesheetMayAffectTheme(current) || (current !== previous && stylesheetMayAffectTheme(previous));
+  }
   const idle = typeof window.requestIdleCallback === "function";
   const schedule = () => {
     if (stopped || pending !== undefined) return;
@@ -90,7 +139,7 @@ export function observeTheme(listener: () => void, signal?: AbortSignal): () => 
     pending = idle ? window.requestIdleCallback(run, { timeout: 1000 }) : window.requestAnimationFrame(run);
   };
   const observer = new MutationObserver((records) => {
-    if (records.some(changesTheme)) schedule();
+    if (records.some((record) => changesTheme(record, linkedStylesheetChangesTheme))) schedule();
   });
   observer.observe(document.documentElement, { attributes: true, attributeFilter: rootAttributes });
   observer.observe(document.head, {
@@ -98,9 +147,9 @@ export function observeTheme(listener: () => void, signal?: AbortSignal): () => 
     attributes: true, attributeOldValue: true,
     attributeFilter: ["href", "rel", "media", "disabled"],
   });
-  // Inserting a link precedes its load; sample again once its CSS is usable.
   const loaded = (event: Event) => {
-    if (event.target instanceof Element && isStylesheet(event.target)) schedule();
+    if (event.target instanceof Element && isStylesheet(event.target) &&
+      linkedStylesheetChangesTheme(event.target, true)) schedule();
   };
   document.head.addEventListener("load", loaded, true);
   const coarse = window.matchMedia("(pointer: coarse)");
