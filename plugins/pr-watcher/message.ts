@@ -1,6 +1,6 @@
 import type { Check, PullRequestRef } from "./contract.ts";
 import type { PendingItem } from "./store.ts";
-import type { CiReport } from "./triggers.ts";
+import type { CiReport } from "./ledger.ts";
 
 export const MESSAGE_LIMIT = 3000;
 export const SAFETY_LINE = "Don't push, reply on GitHub or request reviewers without asking the user first.";

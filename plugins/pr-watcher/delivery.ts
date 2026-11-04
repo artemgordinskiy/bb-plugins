@@ -1,10 +1,10 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { PullRequestRef, Snapshot } from "./contract.ts";
+import type { Ledger, Wake } from "./ledger.ts";
 import { buildMessage } from "./message.ts";
 import { isEligible } from "./ownership.ts";
-import type { Binding, PendingItem, Reservation, Store } from "./store.ts";
 import type { PrReading } from "./reading.ts";
-import { type CiReport, ciReport } from "./triggers.ts";
+import type { Binding, Reservation, Store } from "./store.ts";
 
 export const QUIET_MS = 120_000;
 
@@ -18,6 +18,7 @@ export type CheckoutResult = "same" | "moved" | "unknown";
 export type DeliveryContext = {
   bb: Pick<BbPluginApi, "sdk" | "log" | "pluginId">;
   store: Store;
+  ledger: Ledger;
   clock: WorkClock;
   now: () => number;
   instructionLine: string;
@@ -129,19 +130,16 @@ async function send(ctx: DeliveryContext, threadId: string, text: string, reserv
     store.setOutcome(prUrl, "unknown");
     return;
   }
-  store.rollback(reservation);
+  ctx.ledger.rollback(reservation);
 }
 
-const ciReservation = (report: CiReport | null) =>
-  report && { sha: report.sha, verdict: report.kind === "failed" ? ("fail" as const) : ("pass" as const), recovery: report.kind === "recovered" };
-
-function compose(ctx: DeliveryContext, binding: Binding, pr: PullRequestRef, snapshot: Snapshot, report: CiReport | null, items: PendingItem[]) {
+function compose(ctx: DeliveryContext, binding: Binding, pr: PullRequestRef, snapshot: Snapshot, wake: Wake) {
   return buildMessage({
     pr,
     url: binding.prUrl,
     title: snapshot.title,
-    ci: report,
-    items,
+    ci: wake.ci,
+    items: wake.items,
     excerpts: new Map(snapshot.items.map((item) => [item.id, item.excerpt])),
     mayBeMissing: binding.mayBeMissing,
     instructionLine: ctx.instructionLine,
@@ -157,12 +155,11 @@ export async function deliver(
   reading: PrReading,
   checkout: () => Promise<CheckoutResult>,
 ): Promise<void> {
-  const { store, held } = ctx;
+  const { store, ledger, held } = ctx;
   const binding = store.binding(prUrl);
   if (!binding) return;
-  const items = store.pendingItems(prUrl);
-  const report = ciReport(reading.sha, reading.ci, store.reportedSha(prUrl, reading.sha));
-  if (items.length === 0 && !report) {
+  const wake = ledger.next(prUrl, reading);
+  if (!wake) {
     held.delete(prUrl);
     return;
   }
@@ -184,8 +181,8 @@ export async function deliver(
     return;
   }
   held.delete(prUrl);
-  const text = compose(ctx, binding, pr, snapshot, report, items);
-  const reservation = store.reserve(prUrl, items.map((item) => item.id), ciReservation(report), ctx.now());
+  const text = compose(ctx, binding, pr, snapshot, wake);
+  const reservation = ledger.reserve(prUrl, wake, ctx.now());
   await send(ctx, binding.threadId, text, reservation);
 }
 

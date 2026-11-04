@@ -13,6 +13,7 @@ import {
 } from "./contract.ts";
 import { type CheckoutResult, deliver, type DeliveryContext, startupSweep, WorkClock } from "./delivery.ts";
 import { branchBound, claimKind, findHandoff, isEligible, type ThreadFacts } from "./ownership.ts";
+import { baselineKeys, Ledger } from "./ledger.ts";
 import { type Binding, type ClaimedBy, MIGRATIONS, Store } from "./store.ts";
 import { type CiReading, ciLabel, mergeLabel, readPr } from "./reading.ts";
 import { classifyNew, IDLE_POLL_MS, isRelevant, nextPollDelay, parseBotAuthors } from "./triggers.ts";
@@ -110,6 +111,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
   const delivery: DeliveryContext = {
     bb,
     store,
+    ledger: new Ledger(store),
     clock: new WorkClock(deps.now()),
     now: deps.now,
     instructionLine: values.instructionLine,
@@ -242,12 +244,13 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
   function enroll(owner: Omit<Binding, "prUrl" | "since" | "nextPollAt" | "mayBeMissing" | "lastDeliveryAt" | "lastOutcome">, snapshot: Snapshot): string {
     const prUrl = snapshot.url;
     const now = deps.now();
-    const { ci } = readPr(snapshot);
+    const reading = readPr(snapshot);
+    const { ci } = reading;
     store.enroll(
       { ...owner, prUrl, since: now, nextPollAt: now + nextPollDelay(ci, null, now), mayBeMissing: false, lastDeliveryAt: null, lastOutcome: null },
       {
         itemIds: snapshot.items.map((item) => item.id),
-        ci: ci.kind === "settled" ? { sha: snapshot.headSha, verdict: ci.verdict } : null,
+        keys: baselineKeys(reading),
       },
     );
     latest.set(prUrl, snapshot);

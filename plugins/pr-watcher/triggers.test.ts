@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Check, SnapshotItem } from "./contract.ts";
-import type { CiReading } from "./reading.ts";
+import type { SnapshotItem } from "./contract.ts";
 import {
   ACTIVE_POLL_MS,
-  ciReport,
   classifyNew,
   IDLE_WINDOW_MS,
   IDLE_POLL_MS,
@@ -14,17 +12,6 @@ import {
 } from "./triggers.ts";
 
 const BOTS = parseBotAuthors("copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector");
-
-const run = (name: string, status = "COMPLETED", conclusion: string | null = "SUCCESS"): Check => ({
-  kind: "run",
-  name,
-  status,
-  conclusion,
-  url: null,
-  startedAt: null,
-  required: false,
-  workflow: null,
-});
 
 const item = (over: Partial<SnapshotItem> = {}): SnapshotItem => ({
   id: "i1",
@@ -40,43 +27,6 @@ const item = (over: Partial<SnapshotItem> = {}): SnapshotItem => ({
 });
 
 const relevant = (over: Partial<SnapshotItem>) => isRelevant(item(over), "viewer", BOTS);
-
-const pass: CiReading = { kind: "settled", verdict: "pass", failed: [], optionalFailed: [] };
-const fail = {
-  kind: "settled",
-  verdict: "fail",
-  failed: [{ ...run("a", "COMPLETED", "FAILURE"), key: "run::a" }],
-  optionalFailed: [],
-} satisfies CiReading;
-
-test("ciReport: the first settled observation of a SHA reports", () => {
-  assert.deepEqual(ciReport("abc", pass, null), { kind: "passed", sha: "abc" });
-  assert.deepEqual(ciReport("abc", fail, null), { kind: "failed", sha: "abc", checks: fail.failed });
-});
-
-test("ciReport: nothing unless CI is settled", () => {
-  for (const state of [{ kind: "none" }, { kind: "running" }, { kind: "unsupported" }] as const) {
-    assert.equal(ciReport("abc", state, null), null);
-  }
-});
-
-test("ciReport: a reported SHA stays reported", () => {
-  assert.equal(ciReport("abc", fail, { reason: "delivered", verdict: "fail" }), null);
-  assert.equal(ciReport("abc", pass, { reason: "delivered", verdict: "pass" }), null);
-});
-
-test("ciReport: a delivered failure that passes is one recovery", () => {
-  assert.deepEqual(ciReport("abc", pass, { reason: "delivered", verdict: "fail" }), { kind: "recovered", sha: "abc" });
-});
-
-test("ciReport: a delivered pass that then fails stays silent", () => {
-  assert.equal(ciReport("abc", fail, { reason: "delivered", verdict: "pass" }), null);
-});
-
-test("ciReport: a baselined failure never recovers", () => {
-  assert.equal(ciReport("abc", pass, { reason: "baselined", verdict: "fail" }), null);
-  assert.equal(ciReport("abc", fail, { reason: "baselined", verdict: "pass" }), null);
-});
 
 test("parseBotAuthors: trims, lowercases and strips [bot]", () => {
   assert.deepEqual([...parseBotAuthors(" CodeRabbitAI[bot] , claude,, ")], ["coderabbitai", "claude"]);
@@ -179,5 +129,5 @@ test("nextPollDelay: 60 s for ten minutes after the owner goes idle", () => {
 test("nextPollDelay: 5 min otherwise, including unsupported and settled CI", () => {
   assert.equal(nextPollDelay({ kind: "none" }, null, 0), IDLE_POLL_MS);
   assert.equal(nextPollDelay({ kind: "unsupported" }, null, 0), IDLE_POLL_MS);
-  assert.equal(nextPollDelay(pass, null, 0), IDLE_POLL_MS);
+  assert.equal(nextPollDelay({ kind: "settled", verdict: "pass", failed: [], optionalFailed: [] }, null, 0), IDLE_POLL_MS);
 });

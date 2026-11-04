@@ -44,11 +44,27 @@ export const MIGRATIONS = [
     thread_id TEXT NOT NULL PRIMARY KEY,
     at INTEGER NOT NULL
   )`,
+  // 0.2.0: what a thread has been told is kept as keys per PR, one shape for every kind of wake.
+  `CREATE TABLE reported_keys (
+    pr_url TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (pr_url, key)
+  )`,
+  `INSERT INTO reported_keys (pr_url, key, value, at)
+   SELECT pr_url, 'ci:' || sha, reason || ':' || verdict, at FROM reported_shas`,
+  `INSERT INTO reported_keys (pr_url, key, value, at)
+   SELECT pr_url, 'last', json_object('verdict', verdict, 'sha', sha, 'failed', json('[]')), max(at)
+   FROM reported_shas WHERE reason = 'delivered' GROUP BY pr_url`,
+  `DROP TABLE reported_shas`,
 ];
 
 export type ClaimedBy = "agent" | "user";
 export type Outcome = "sending" | "sent" | "cancelled" | "unknown";
-export type Verdict = "pass" | "fail";
+
+/** Key changes: a value sets the key, null removes it. */
+export type KeyChanges = Record<string, string | null>;
 
 export type Binding = {
   prUrl: string;
@@ -74,18 +90,16 @@ export type PendingItem = {
   url: string;
 };
 
-export type ReportedSha = { reason: "delivered" | "baselined"; verdict: Verdict };
-
 export type Owner = Pick<Binding, "threadId" | "environmentId" | "hostId" | "claimedBy" | "since" | "branchBound" | "nextPollAt">;
-
-type CiReservation = { sha: string; verdict: Verdict; recovery: boolean };
 
 /** What `reserve` changed, kept in memory so a cancelled send can undo it. */
 export type Reservation = {
   prUrl: string;
   items: PendingItem[];
-  ci: CiReservation | null;
+  /** Each changed key's value before the change; null if it wasn't set. */
+  previous: KeyChanges;
   mayBeMissing: boolean;
+  at: number;
 };
 
 type BindingRow = {
@@ -168,7 +182,7 @@ export class Store {
   }
 
   /** First enrollment: everything already on the PR is the baseline. */
-  enroll(binding: Binding, baseline: { itemIds: string[]; ci: { sha: string; verdict: Verdict } | null }): void {
+  enroll(binding: Binding, baseline: { itemIds: string[]; keys: Record<string, string> }): void {
     this.db.transaction(() => {
       this.db
         .prepare(
@@ -186,11 +200,7 @@ export class Store {
           binding.nextPollAt,
         );
       this.markSeen(binding.prUrl, baseline.itemIds);
-      if (baseline.ci) {
-        this.db
-          .prepare("INSERT INTO reported_shas (pr_url, sha, reason, verdict, at) VALUES (?, ?, 'baselined', ?, ?)")
-          .run(binding.prUrl, baseline.ci.sha, baseline.ci.verdict, binding.since);
-      }
+      this.writeKeys(binding.prUrl, baseline.keys, binding.since);
     })();
   }
 
@@ -221,7 +231,7 @@ export class Store {
     this.db.transaction(() => {
       this.db.prepare("DELETE FROM pending_items WHERE pr_url = ?").run(prUrl);
       this.db.prepare("DELETE FROM seen_items WHERE pr_url = ?").run(prUrl);
-      this.db.prepare("DELETE FROM reported_shas WHERE pr_url = ?").run(prUrl);
+      this.db.prepare("DELETE FROM reported_keys WHERE pr_url = ?").run(prUrl);
       this.db.prepare("DELETE FROM bindings WHERE pr_url = ?").run(prUrl);
     })();
   }
@@ -230,9 +240,15 @@ export class Store {
     this.db.prepare("UPDATE bindings SET next_poll_at = ? WHERE pr_url = ?").run(at, prUrl);
   }
 
-  reportedSha(prUrl: string, sha: string): ReportedSha | null {
-    const row = this.db.prepare("SELECT reason, verdict FROM reported_shas WHERE pr_url = ? AND sha = ?").get(prUrl, sha);
-    return (row as ReportedSha | undefined) ?? null;
+  /** Everything the PR's thread has been told, and what was baselined or observed. */
+  keys(prUrl: string): Map<string, string> {
+    const rows = this.db.prepare("SELECT key, value FROM reported_keys WHERE pr_url = ?").all(prUrl) as { key: string; value: string }[];
+    return new Map(rows.map((row) => [row.key, row.value]));
+  }
+
+  /** Changes keys outside a delivery: a baseline or an observation. */
+  setKeys(prUrl: string, changes: KeyChanges, at: number): void {
+    this.db.transaction(() => this.writeKeys(prUrl, changes, at))();
   }
 
   /** Every item the PR already knows about, delivered or still waiting. */
@@ -257,7 +273,7 @@ export class Store {
   }
 
   /** Marks the delivery done before it is sent, in one transaction. */
-  reserve(prUrl: string, itemIds: string[], ci: CiReservation | null, now: number): Reservation {
+  reserve(prUrl: string, itemIds: string[], changes: KeyChanges, now: number): Reservation {
     return this.db.transaction((): Reservation => {
       const wanted = new Set(itemIds);
       const items = this.pendingItems(prUrl).filter((item) => wanted.has(item.id));
@@ -265,32 +281,24 @@ export class Store {
       const remove = this.db.prepare("DELETE FROM pending_items WHERE pr_url = ? AND item_id = ?");
       for (const item of items) remove.run(prUrl, item.id);
       this.markSeen(prUrl, items.map((item) => item.id));
-      if (ci?.recovery) {
-        this.db.prepare("UPDATE reported_shas SET verdict = ?, at = ? WHERE pr_url = ? AND sha = ?").run(ci.verdict, now, prUrl, ci.sha);
-      } else if (ci) {
-        this.db
-          .prepare("INSERT INTO reported_shas (pr_url, sha, reason, verdict, at) VALUES (?, ?, 'delivered', ?, ?)")
-          .run(prUrl, ci.sha, ci.verdict, now);
-      }
+      const current = this.keys(prUrl);
+      const previous: KeyChanges = Object.fromEntries(Object.keys(changes).map((key) => [key, current.get(key) ?? null]));
+      this.writeKeys(prUrl, changes, now);
       this.db
         .prepare("UPDATE bindings SET may_be_missing = 0, last_delivery_at = ?, last_outcome = 'sending' WHERE pr_url = ?")
         .run(now, prUrl);
-      return { prUrl, items, ci, mayBeMissing };
+      return { prUrl, items, previous, mayBeMissing, at: now };
     })();
   }
 
-  /** Undoes `reserve`. Only for a queued send whose delete was confirmed. */
+  /** Undoes `reserve`. Only for a send that is known not to have reached the thread. */
   rollback(reservation: Reservation): void {
-    const { prUrl, items, ci, mayBeMissing } = reservation;
+    const { prUrl, items, previous, mayBeMissing, at } = reservation;
     this.db.transaction(() => {
       const unsee = this.db.prepare("DELETE FROM seen_items WHERE pr_url = ? AND item_id = ?");
       for (const item of items) unsee.run(prUrl, item.id);
       this.insertPending(prUrl, items);
-      if (ci?.recovery) {
-        this.db.prepare("UPDATE reported_shas SET verdict = 'fail' WHERE pr_url = ? AND sha = ?").run(prUrl, ci.sha);
-      } else if (ci) {
-        this.db.prepare("DELETE FROM reported_shas WHERE pr_url = ? AND sha = ?").run(prUrl, ci.sha);
-      }
+      this.writeKeys(prUrl, previous, at);
       this.db
         .prepare("UPDATE bindings SET may_be_missing = ?, last_outcome = 'cancelled' WHERE pr_url = ?")
         .run(mayBeMissing ? 1 : 0, prUrl);
@@ -316,6 +324,18 @@ export class Store {
 
   clearOff(threadId: string): void {
     this.db.prepare("DELETE FROM thread_off WHERE thread_id = ?").run(threadId);
+  }
+
+  private writeKeys(prUrl: string, changes: KeyChanges, at: number): void {
+    const upsert = this.db.prepare(
+      `INSERT INTO reported_keys (pr_url, key, value, at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (pr_url, key) DO UPDATE SET value = excluded.value, at = excluded.at`,
+    );
+    const remove = this.db.prepare("DELETE FROM reported_keys WHERE pr_url = ? AND key = ?");
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null) remove.run(prUrl, key);
+      else upsert.run(prUrl, key, value, at);
+    }
   }
 
   private markSeen(prUrl: string, itemIds: string[]): void {

@@ -38,14 +38,34 @@ const pending = (id: string): PendingItem => ({
 });
 
 const enroll = (store: Store, over: Partial<Binding> = {}) =>
-  store.enroll(binding(over), { itemIds: [], ci: null });
+  store.enroll(binding(over), { itemIds: [], keys: {} });
 
-test("enroll baselines items and a settled SHA with the binding", () => {
+const key = (store: Store, name: string, url = URL_A) => store.keys(url).get(name);
+
+test("enroll baselines items and keys with the binding", () => {
   const store = open();
-  store.enroll(binding(), { itemIds: ["a", "b"], ci: { sha: "abc", verdict: "fail" } });
+  store.enroll(binding(), { itemIds: ["a", "b"], keys: { "ci:abc": "baselined:fail" } });
   assert.deepEqual([...store.knownIds(URL_A)].sort(), ["a", "b"]);
-  assert.deepEqual(store.reportedSha(URL_A, "abc"), { reason: "baselined", verdict: "fail" });
+  assert.equal(key(store, "ci:abc"), "baselined:fail");
   assert.equal(store.binding(URL_A)?.branchBound, true);
+});
+
+test("the 0.2 migration moves reported SHAs to keys and keeps the last delivered verdict", () => {
+  const db = new Database(":memory:");
+  const before = MIGRATIONS.indexOf(MIGRATIONS.find((sql) => sql.includes("CREATE TABLE reported_keys")) ?? "");
+  for (const sql of MIGRATIONS.slice(0, before)) db.exec(sql);
+  const insert = db.prepare("INSERT INTO reported_shas (pr_url, sha, reason, verdict, at) VALUES (?, ?, ?, ?, ?)");
+  insert.run(URL_A, "old", "delivered", "fail", 1);
+  insert.run(URL_A, "new", "delivered", "pass", 2);
+  insert.run(URL_A, "base", "baselined", "fail", 3);
+  insert.run(URL_B, "only", "baselined", "pass", 4);
+  for (const sql of MIGRATIONS.slice(before)) db.exec(sql);
+  const store = new Store(db);
+  assert.equal(key(store, "ci:old"), "delivered:fail");
+  assert.equal(key(store, "ci:new"), "delivered:pass");
+  assert.equal(key(store, "ci:base"), "baselined:fail");
+  assert.deepEqual(JSON.parse(key(store, "last") ?? "null"), { verdict: "pass", sha: "new", failed: [] });
+  assert.equal(key(store, "last", URL_B), undefined, "a baseline was never told");
 });
 
 test("recordNew stores pending and seen together and sets the flag", () => {
@@ -65,55 +85,58 @@ test("recordNew leaves an earlier flag set", () => {
   assert.equal(store.binding(URL_A)?.mayBeMissing, true);
 });
 
-test("reserve moves items to seen, records the SHA and marks sending in one step", () => {
+test("reserve moves items to seen, writes the keys and marks sending in one step", () => {
   const store = open();
   enroll(store);
   store.recordNew(URL_A, { pending: [pending("p")], ignored: [], saturated: true });
-  store.reserve(URL_A, ["p"], { sha: "abc", verdict: "fail", recovery: false }, 500);
+  store.reserve(URL_A, ["p"], { "ci:abc": "delivered:fail" }, 500);
   assert.deepEqual(store.pendingItems(URL_A), []);
   assert.ok(store.knownIds(URL_A).has("p"));
-  assert.deepEqual(store.reportedSha(URL_A, "abc"), { reason: "delivered", verdict: "fail" });
+  assert.equal(key(store, "ci:abc"), "delivered:fail");
   const row = store.binding(URL_A);
   assert.equal(row?.lastOutcome, "sending");
   assert.equal(row?.lastDeliveryAt, 500);
   assert.equal(row?.mayBeMissing, false);
 });
 
-test("reserve for a recovery flips the row", () => {
+test("reserve overwrites a key and removes one set to null", () => {
   const store = open();
   enroll(store);
-  store.reserve(URL_A, [], { sha: "abc", verdict: "fail", recovery: false }, 1);
-  store.reserve(URL_A, [], { sha: "abc", verdict: "pass", recovery: true }, 2);
-  assert.deepEqual(store.reportedSha(URL_A, "abc"), { reason: "delivered", verdict: "pass" });
+  store.setKeys(URL_A, { queued: "1" }, 1);
+  store.reserve(URL_A, [], { "ci:abc": "delivered:fail" }, 1);
+  store.reserve(URL_A, [], { "ci:abc": "delivered:pass", queued: null }, 2);
+  assert.deepEqual([...store.keys(URL_A)], [["ci:abc", "delivered:pass"]]);
 });
 
 test("rollback restores everything reserve changed and says cancelled", () => {
   const store = open();
   enroll(store);
   store.recordNew(URL_A, { pending: [pending("p")], ignored: ["i"], saturated: true });
-  const reservation = store.reserve(URL_A, ["p"], { sha: "abc", verdict: "pass", recovery: false }, 500);
+  const reservation = store.reserve(URL_A, ["p"], { "ci:abc": "delivered:pass" }, 500);
   store.rollback(reservation);
   assert.deepEqual(store.pendingItems(URL_A), [pending("p")]);
   assert.deepEqual([...store.knownIds(URL_A)].sort(), ["i", "p"]);
-  assert.equal(store.reportedSha(URL_A, "abc"), null);
+  assert.equal(key(store, "ci:abc"), undefined);
   assert.equal(store.binding(URL_A)?.mayBeMissing, true);
   assert.equal(store.binding(URL_A)?.lastOutcome, "cancelled");
 });
 
-test("rollback of a recovery flips back to fail", () => {
+test("rollback puts back a key's earlier value, and a removed key", () => {
   const store = open();
   enroll(store);
-  store.reserve(URL_A, [], { sha: "abc", verdict: "fail", recovery: false }, 1);
-  store.rollback(store.reserve(URL_A, [], { sha: "abc", verdict: "pass", recovery: true }, 2));
-  assert.deepEqual(store.reportedSha(URL_A, "abc"), { reason: "delivered", verdict: "fail" });
+  store.setKeys(URL_A, { queued: "1" }, 1);
+  store.reserve(URL_A, [], { "ci:abc": "delivered:fail" }, 1);
+  store.rollback(store.reserve(URL_A, [], { "ci:abc": "delivered:pass", queued: null }, 2));
+  assert.equal(key(store, "ci:abc"), "delivered:fail");
+  assert.equal(key(store, "queued"), "1");
 });
 
 test("sending becomes unknown at startup; other outcomes stay", () => {
   const store = open();
   enroll(store);
   enroll(store, { prUrl: URL_B });
-  store.reserve(URL_A, [], null, 1);
-  store.reserve(URL_B, [], null, 1);
+  store.reserve(URL_A, [], {}, 1);
+  store.reserve(URL_B, [], {}, 1);
   store.setOutcome(URL_B, "sent");
   store.resolveInterrupted();
   assert.equal(store.binding(URL_A)?.lastOutcome, "unknown");
@@ -122,7 +145,7 @@ test("sending becomes unknown at startup; other outcomes stay", () => {
 
 test("transfer changes the owner and keeps the cursors", () => {
   const store = open();
-  store.enroll(binding(), { itemIds: ["a"], ci: { sha: "abc", verdict: "pass" } });
+  store.enroll(binding(), { itemIds: ["a"], keys: { "ci:abc": "baselined:pass" } });
   store.recordNew(URL_A, { pending: [pending("p")], ignored: [], saturated: false });
   store.transfer(URL_A, {
     threadId: "thr_b",
@@ -140,7 +163,7 @@ test("transfer changes the owner and keeps the cursors", () => {
   assert.equal(row?.claimedBy, "user");
   assert.equal(row?.branchBound, false);
   assert.equal(store.pendingItems(URL_A).length, 1);
-  assert.deepEqual(store.reportedSha(URL_A, "abc"), { reason: "baselined", verdict: "pass" });
+  assert.equal(key(store, "ci:abc"), "baselined:pass");
   assert.ok(store.knownIds(URL_A).has("a"));
 });
 
@@ -154,14 +177,14 @@ test("moveOwner keeps claimedBy", () => {
 
 test("drop removes the binding and every row of the PR, and only that PR", () => {
   const store = open();
-  store.enroll(binding(), { itemIds: ["a"], ci: { sha: "abc", verdict: "pass" } });
+  store.enroll(binding(), { itemIds: ["a"], keys: { "ci:abc": "baselined:pass" } });
   store.recordNew(URL_A, { pending: [pending("p")], ignored: [], saturated: false });
-  store.enroll(binding({ prUrl: URL_B }), { itemIds: ["b"], ci: null });
+  store.enroll(binding({ prUrl: URL_B }), { itemIds: ["b"], keys: {} });
   store.drop(URL_A);
   assert.equal(store.binding(URL_A), null);
   assert.equal(store.knownIds(URL_A).size, 0);
   assert.equal(store.pendingItems(URL_A).length, 0);
-  assert.equal(store.reportedSha(URL_A, "abc"), null);
+  assert.equal(store.keys(URL_A).size, 0);
   assert.ok(store.binding(URL_B));
   assert.ok(store.knownIds(URL_B).has("b"));
 });
