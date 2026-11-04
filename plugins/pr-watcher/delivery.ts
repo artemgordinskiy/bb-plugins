@@ -80,12 +80,25 @@ export class WorkClock {
   }
 }
 
-const isBusy = (owner: ThreadRow) =>
-  isRunning(owner) ||
-  owner.status === "pending" ||
-  owner.hasPendingInteraction ||
-  owner.queuedWork !== "none" ||
-  Object.values(owner.activity).some((count) => count > 0);
+const ACTIVITY: Record<string, string> = {
+  activeBackgroundAgentCount: "background agent",
+  activeBackgroundCommandCount: "background command",
+  activeGoalCount: "goal",
+  activePlanModeCount: "plan mode",
+  activeWorkflowCount: "workflow",
+};
+
+/** Why the owner can't take a wake now, or null. A background command holds only when the setting says so. */
+export function busyReason(owner: ThreadRow, backgroundCommandsHold = true): string | null {
+  if (isRunning(owner) || owner.status === "pending") return "owner busy";
+  if (owner.hasPendingInteraction) return "owner busy: waiting for an answer";
+  if (owner.queuedWork !== "none") return "owner busy: queued work";
+  const active = Object.entries(owner.activity).filter(
+    ([kind, count]) => count > 0 && (backgroundCommandsHold || kind !== "activeBackgroundCommandCount"),
+  );
+  if (active.length === 0) return null;
+  return `owner busy: ${active.map(([kind, count]) => `${count} ${ACTIVITY[kind] ?? kind}${count === 1 ? "" : "s"}`).join(", ")}`;
+}
 
 /** Null when the owner can be woken, otherwise why not. */
 export async function ownerHold(ctx: DeliveryContext, threadId: string): Promise<string | null> {
@@ -94,9 +107,10 @@ export async function ownerHold(ctx: DeliveryContext, threadId: string): Promise
   const [owner] = await bb.sdk.threads.list({ threadIds: [threadId], includeHidden: true });
   if (!owner || !isEligible(owner)) return "owner not eligible";
   if (owner.status === "error") return "owner in error";
-  if (isBusy(owner)) {
+  const busy = busyReason(owner, ctx.config().backgroundCommandsHold);
+  if (busy) {
     clock.stamp(threadId, now());
-    return "owner busy";
+    return busy;
   }
   const inventory = await bb.sdk.threads.list({ projectId: owner.projectId, includeHidden: true, archived: false });
   for (const row of inventory.filter(isRunning)) clock.stamp(row.id, now());

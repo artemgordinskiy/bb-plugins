@@ -106,6 +106,13 @@ export const SETTINGS = {
     description: "Comma-separated GitHub author associations whose reviews and comments wake the thread.",
     default: "OWNER, MEMBER, COLLABORATOR",
   },
+  backgroundCommandsHold: {
+    type: "boolean",
+    label: "Wait for background commands",
+    description:
+      "Hold wakes while the owner has a background command running. Turn it off if threads keep long-running commands, such as a dev server, that would hold wakes indefinitely. Background agents, goals and workflows always hold.",
+    default: true,
+  },
   quietSeconds: {
     type: "number",
     label: "Quiet time (seconds)",
@@ -155,6 +162,7 @@ export type Config = {
   optionalFailures: OptionalFailures;
   wake: WakeRules;
   feedback: FeedbackRules;
+  backgroundCommandsHold: boolean;
   quietMs: number;
   activePollMs: number;
   idlePollMs: number;
@@ -193,6 +201,7 @@ export function toConfig(values: SettingsValues): Config {
       roles: parseRoles(values.feedbackRoles),
       bareApprovals: pick(APPROVALS, values.approvalWakes, "ready-to-merge") === "every-approval",
     },
+    backgroundCommandsHold: values.backgroundCommandsHold,
     quietMs: seconds(values.quietSeconds, 0, 3600, 120),
     activePollMs: seconds(values.activePollSeconds, 30, 600, 60),
     idlePollMs: seconds(values.idlePollSeconds, 60, 3600, 300),

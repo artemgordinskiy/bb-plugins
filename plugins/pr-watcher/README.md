@@ -92,6 +92,7 @@ applies on the next poll; no reload is needed.
 | `mergeQueueWakes` | `true` | The "Left the merge queue" wake |
 | `botAuthors` | `copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector` | Comma-separated bot logins whose reviews count. A trailing `[bot]` is ignored |
 | `feedbackRoles` | `OWNER, MEMBER, COLLABORATOR` | Comma-separated GitHub author associations whose reviews and comments count |
+| `backgroundCommandsHold` | `true` | Hold wakes while the owner has a background command running. Turn off if threads keep long-running commands, such as a dev server, that would hold wakes indefinitely. Background agents, goals and workflows always hold |
 | `quietSeconds` | `120` | How long the owner and everything under it must be idle before a wake. 0 to 3600 |
 | `activePollSeconds` | `60` | The poll interval while CI runs and for 10 minutes after the owner goes idle. 30 to 600 |
 | `idlePollSeconds` | `300` | The poll interval otherwise. 60 to 3600 |

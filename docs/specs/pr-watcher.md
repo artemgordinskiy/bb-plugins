@@ -1,6 +1,6 @@
 # PR Watcher: technical spec
 
-Status: v2.0.1, shipped as 0.2.1. [Wake rules (0.2)](#wake-rules-02) replaces
+Status: v2.0.2, shipped as 0.2.2. [Wake rules (0.2)](#wake-rules-02) replaces
 the trigger, recovery and settings rules of v1.5 where they differ. The user
 chose a much simpler v1 after reviewing complexity with Claude and Codex. No
 questions are open. [Decisions](#decisions) records the choices and
@@ -1172,3 +1172,7 @@ Each draft's full text is in this file's git history.
 - **v2.0.1**: a live test on bb-work found that a recovery-only message still
   said "propose fixes". A message with nothing to fix now carries
   `infoInstructionLine` instead.
+- **v2.0.2**: on bb-work a watch was held as `owner busy` for hours by a
+  background command in its owner. `held` now names the reason, and
+  `backgroundCommandsHold` (default on) lets long-running commands stop
+  holding wakes.

@@ -115,6 +115,7 @@ poll.
 | `infoInstructionLine` | Tell the user briefly; change nothing | Any one line |
 | `botAuthors` | `copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector` | Logins |
 | `feedbackRoles` | `OWNER, MEMBER, COLLABORATOR` | Associations |
+| `backgroundCommandsHold` | `true` | `false` |
 | `quietSeconds`, `activePollSeconds`, `idlePollSeconds` | `120`, `60`, `300` | Numbers |
 
 A wake waits until the owner and everything running under it have been idle for
@@ -139,7 +140,7 @@ Run `bb pr-watcher status` and read `held`:
 | `thread off` | The user ran `unwatch` |
 | `owner not eligible` | The owner can't be woken. If it was archived or deleted, each poll retries the handoff until the lookup works |
 | `owner in error` | The owner's last turn failed |
-| `owner busy` | The owner is running or has queued work or a pending question |
+| `owner busy` | The owner is running. With a reason after it: a pending question, queued work, or running background work such as `1 background command`. A long-running command holds wakes until it ends, unless the user turns `backgroundCommandsHold` off |
 | `work running` | A child or workflow step under the owner is running |
 | `quiet time` | Less than `quietSeconds` since that work ended, or since the plugin restarted |
 | `checkout unresolved` | `gh pr view` failed in the checkout |

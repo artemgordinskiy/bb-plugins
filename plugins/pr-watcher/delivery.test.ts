@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { StatusOutput } from "./contract.ts";
-import { isRefusal, isRunning, QUIET_MS, type ThreadRow, WorkClock, workSet } from "./delivery.ts";
+import { busyReason, isRefusal, isRunning, QUIET_MS, type ThreadRow, WorkClock, workSet } from "./delivery.ts";
 import { comment, failing, NEW_SHA, OTHER_PR, passing, PR, review, running, SHA, THREAD, threadRow, watching, withPlugin } from "./test-support.ts";
 
 const row = (overrides: Parameters<typeof threadRow>[0]) => threadRow(overrides) as unknown as ThreadRow;
@@ -247,13 +247,13 @@ const held = [
   ["owner running", { status: "active" }, "owner busy"],
   ["owner displayed as waiting for a host", { runtime: { displayStatus: "waiting-for-host" } }, "owner busy"],
   ["owner pending", { status: "pending" }, "owner busy"],
-  ["a pending interaction", { hasPendingInteraction: true }, "owner busy"],
-  ["queued work", { queuedWork: "queued" }, "owner busy"],
-  ["a background agent", { activity: { activeBackgroundAgentCount: 1 } }, "owner busy"],
-  ["a background command", { activity: { activeBackgroundCommandCount: 1 } }, "owner busy"],
-  ["a goal", { activity: { activeGoalCount: 1 } }, "owner busy"],
-  ["plan mode", { activity: { activePlanModeCount: 1 } }, "owner busy"],
-  ["a workflow", { activity: { activeWorkflowCount: 1 } }, "owner busy"],
+  ["a pending interaction", { hasPendingInteraction: true }, "owner busy: waiting for an answer"],
+  ["queued work", { queuedWork: "queued" }, "owner busy: queued work"],
+  ["a background agent", { activity: { activeBackgroundAgentCount: 1 } }, "owner busy: 1 background agent"],
+  ["a background command", { activity: { activeBackgroundCommandCount: 1 } }, "owner busy: 1 background command"],
+  ["a goal", { activity: { activeGoalCount: 1 } }, "owner busy: 1 goal"],
+  ["plan mode", { activity: { activePlanModeCount: 1 } }, "owner busy: 1 plan mode"],
+  ["a workflow", { activity: { activeWorkflowCount: 1 } }, "owner busy: 1 workflow"],
   ["owner in error", { status: "error" }, "owner in error"],
   ["owner hidden", { visibility: "hidden" }, "owner not eligible"],
 ] as const;
@@ -516,4 +516,27 @@ test("the same PR on a new SHA reports again and the old SHA stays reported", as
     await plugin.poll();
     assert.equal(plugin.world.sends.length, 2);
   });
+});
+
+test("with backgroundCommandsHold off, a long-running background command doesn't hold a wake; a background agent still does", async () => {
+  await watching(
+    async (plugin) => {
+      plugin.world.threads.set(THREAD, threadRow({ id: THREAD, activity: { ...threadRow({ id: THREAD })["activity"] as object, activeBackgroundCommandCount: 1 } }));
+      plugin.setSnapshot({ ci: failing });
+      await plugin.poll();
+      assert.equal(plugin.world.sends.length, 1);
+      plugin.world.threads.set(THREAD, threadRow({ id: THREAD, activity: { ...threadRow({ id: THREAD })["activity"] as object, activeBackgroundAgentCount: 1 } }));
+      plugin.setSnapshot({ ci: failing, items: [comment("c1")] });
+      await plugin.poll();
+      assert.equal(plugin.world.sends.length, 1);
+      assert.equal((await plugin.status()).bindings[0]?.held, "owner busy: 1 background agent");
+    },
+    { settings: { backgroundCommandsHold: false } },
+  );
+});
+
+test("busyReason: counts and kinds are named together", () => {
+  const row = threadRow({ id: THREAD, activity: { ...(threadRow({ id: THREAD })["activity"] as object), activeBackgroundCommandCount: 2, activeWorkflowCount: 1 } });
+  assert.equal(busyReason(row as unknown as ThreadRow), "owner busy: 2 background commands, 1 workflow");
+  assert.equal(busyReason(row as unknown as ThreadRow, false), "owner busy: 1 workflow");
 });
