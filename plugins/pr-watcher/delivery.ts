@@ -105,10 +105,16 @@ export async function ownerHold(ctx: DeliveryContext, threadId: string): Promise
   return clock.quiet([threadId, ...work.map((row) => row.id)], now(), ctx.config().quietMs) ? null : "quiet time";
 }
 
-/** A 409 from bb, such as "Thread is already active", is a definite refusal: the message never reached the thread. */
+/**
+ * bb's `thread_not_writable` 409, such as "Thread is already active": bb checks it before it
+ * dispatches anything, so the message never reached the thread and can be sent again.
+ * Any other error, including other 409s, counts as delivered.
+ */
 export function isRefusal(error: unknown): boolean {
-  if (typeof error === "object" && error !== null && (error as { status?: unknown }).status === 409) return true;
-  return /\bHTTP 409\b/.test(String(error));
+  const fields = typeof error === "object" && error !== null ? (error as { code?: unknown; status?: unknown }) : {};
+  if (fields.code === "thread_not_writable") return true;
+  const text = String(error);
+  return /\bHTTP 409: Thread is /.test(text) || (fields.status === 409 && /\bThread is /.test(text));
 }
 
 async function send(ctx: DeliveryContext, threadId: string, text: string, reservation: Reservation): Promise<void> {

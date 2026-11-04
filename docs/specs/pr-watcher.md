@@ -34,10 +34,11 @@ no comment counts toward "Ready to merge" instead of waking. Ready to merge
 means OPEN, approved (`reviewDecision`, or with no review rule an approval in
 `latestOpinionatedReviews` and no change request), CI green, merge state
 `CLEAN`, `HAS_HOOKS` or `UNSTABLE`, and neither queued nor set to
-auto-merge; `UNKNOWN` holds. It wakes once per set of approvals: it wakes
-again only when no current approval was in the set it was told about, so a
-restack or another approval stays quiet and a dismissal and re-approval
-wakes. An approved, green draft wakes once. Leaving the merge queue, or
+auto-merge; `UNKNOWN` holds. Only required checks gate it, so a red check that isn't required never blocks
+it. It wakes once per set of approvals: it wakes again only when no current
+approval was in the set it was told about, and the set is forgotten once the
+PR stops being approved. A restack or another approval stays quiet; a change
+request followed by a re-approval wakes. An approved, green draft wakes once. Leaving the merge queue, or
 auto-merge turning off, without merging wakes.
 
 **Settings.** Every rule above is a setting: `ciPassWakes`
@@ -68,9 +69,11 @@ that before stopping a child. An agent's move respects a thread the user
 turned off. `bb pr-watcher unwatch [thread] --pr <url>` ends one watch and
 leaves the thread on.
 
-**Delivery.** A send that bb refuses with HTTP 409, such as "Thread is
-already active", is rolled back and retried on the next poll instead of
-counting as delivered.
+**Delivery.** A send that bb refuses with its `thread_not_writable` 409, such
+as "Thread is already active", is rolled back and retried on the next poll
+instead of counting as delivered. bb raises that error before it dispatches
+anything (`resolveSendMode` in bb-app's server); any other error still counts
+as delivered.
 
 ## Goal
 

@@ -27,13 +27,14 @@ const reading = (ci: CiReading, sha = "abc", over: Partial<PrReading> = {}): PrR
   sha,
   ci,
   readiness: "not-ready",
+  approved: false,
   approvalIds: [],
   approvers: [],
   queued: false,
   ...over,
 });
 const ready = (ids = ["r1"], over: Partial<PrReading> = {}) =>
-  reading(pass, "abc", { readiness: "ready", approvalIds: ids, approvers: ids.map((id) => `user-${id}`), ...over });
+  reading(pass, "abc", { readiness: "ready", approved: true, approvalIds: ids, approvers: ids.map((id) => `user-${id}`), ...over });
 
 const item: PendingItem = {
   id: "c1",
@@ -249,4 +250,23 @@ test("Ledger: a rolled-back recovery is a recovery again", () => {
   assert.ok(recovery);
   subject.rollback(subject.reserve(URL, recovery, 2));
   assert.equal(subject.next(URL, reading(pass, "fix"), rules())?.ci?.kind, "recovered");
+});
+
+test("Ledger: a change request clears 'ready', so the re-approval wakes even though an earlier approval survived", () => {
+  const { ledger: subject } = ledger();
+  const first = subject.next(URL, ready(["a"]), rules());
+  assert.equal(first?.merge[0]?.kind, "ready");
+  assert.ok(first);
+  subject.reserve(URL, first, 1);
+  assert.equal(subject.next(URL, ready(["a"], { readiness: "not-ready", approved: false }), rules()), null);
+  assert.equal(subject.next(URL, ready(["a", "b2"]), rules())?.merge[0]?.kind, "ready");
+});
+
+test("Ledger: a restack that only drops CI or merge state keeps 'ready', so it stays quiet", () => {
+  const { ledger: subject } = ledger();
+  const first = subject.next(URL, ready(["a"]), rules());
+  assert.ok(first);
+  subject.reserve(URL, first, 1);
+  assert.equal(subject.next(URL, ready(["a"], { readiness: "not-ready", ci: { kind: "running" } }), rules()), null);
+  assert.equal(subject.next(URL, ready(["a"], { sha: "restacked" }), rules()), null);
 });

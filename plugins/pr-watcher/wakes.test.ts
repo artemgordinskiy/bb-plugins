@@ -131,3 +131,40 @@ test("the quiet time is a setting", async () => {
     assert.equal(plugin.world.sends.length, 1, "no wait after the claim");
   });
 });
+
+test("with a red check that isn't required, ready to merge still wakes", async () => {
+  const ci = { rollup: "FAILURE" as const, hasNextPage: false, checks: [check({ required: true }), check({ name: "claude", conclusion: "FAILURE" })] };
+  await watching(async (plugin) => {
+    plugin.setSnapshot({ ...approved(), ci, mergeState: "UNSTABLE" });
+    await plugin.poll();
+    assert.equal(plugin.world.sends.length, 1);
+    assert.match(plugin.sentText(), /CI failed on abc1234: claude \(not required\)/);
+    assert.match(plugin.sentText(), /Ready to merge: approved by @reviewer-r1/);
+  });
+});
+
+test("approved, changes requested, approved again: the re-approval wakes", async () => {
+  await watching(async (plugin) => {
+    plugin.setSnapshot(approved(["a"]));
+    await plugin.poll();
+    plugin.setSnapshot({
+      ...approved(["a"]),
+      reviewDecision: "CHANGES_REQUESTED",
+      mergeState: "BLOCKED",
+      opinions: [
+        { id: "a", author: "reviewer-a", state: "APPROVED" },
+        { id: "b1", author: "reviewer-b", state: "CHANGES_REQUESTED" },
+      ],
+      items: [review("b1", { author: "reviewer-b", excerpt: "Please rename the flag" })],
+    });
+    await plugin.poll();
+    plugin.setSnapshot({
+      ...approved(["a", "b2"]),
+      items: [review("b1", { author: "reviewer-b", excerpt: "Please rename the flag" }), review("b2", { reviewState: "APPROVED", excerpt: "", author: "reviewer-b" })],
+    });
+    await plugin.poll();
+    assert.equal(plugin.world.sends.length, 3);
+    assert.match(plugin.sentText(1), /changes requested/);
+    assert.match(plugin.sentText(2), /Ready to merge/);
+  });
+});

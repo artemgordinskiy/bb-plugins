@@ -176,3 +176,17 @@ test("mergeLabel: queued wins over readiness", () => {
   const reading = readPr(snapshot({ ci: green, reviewDecision: "APPROVED", mergeState: "CLEAN", opinions: [approval("r1")], queued: true }));
   assert.equal(mergeLabel(reading), "queued");
 });
+
+test("readPr: a red check that isn't required doesn't block ready to merge, whatever the setting", () => {
+  const ci = { rollup: "FAILURE" as const, hasNextPage: false, checks: [run("tests", { required: true }), failing("claude")] };
+  for (const optional of ["wake", "mention", "ignore"] as const) {
+    const reading = readPr(snapshot({ ci, reviewDecision: "APPROVED", mergeState: "UNSTABLE", opinions: [approval("r1")] }), optional);
+    assert.equal(reading.readiness, "ready", optional);
+  }
+});
+
+test("readPr: approved says whether the PR is approved, apart from CI and merge state", () => {
+  const running = ci([run("a", { status: "IN_PROGRESS", conclusion: null })]);
+  assert.equal(readPr(snapshot({ ci: running, reviewDecision: "APPROVED", opinions: [approval("r1")] })).approved, true);
+  assert.equal(readPr(snapshot({ ci: green, reviewDecision: "CHANGES_REQUESTED", opinions: [approval("r1")] })).approved, false);
+});

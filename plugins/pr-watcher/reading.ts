@@ -22,6 +22,8 @@ export type PrReading = {
   sha: string;
   ci: CiReading;
   readiness: Readiness;
+  /** Approved, whatever CI and the merge state say. */
+  approved: boolean;
   /** Ids of the current approving reviews, sorted. */
   approvalIds: string[];
   approvers: string[];
@@ -89,12 +91,17 @@ export function readCi(ci: Snapshot["ci"], optional: OptionalFailures = "wake"):
   };
 }
 
-function readiness(snapshot: Snapshot, ci: CiReading, approvalIds: string[]): Readiness {
+function isApproved(snapshot: Snapshot, approvalIds: string[]): boolean {
   const changesRequested = snapshot.opinions.some((opinion) => opinion.state === "CHANGES_REQUESTED");
   // A base branch with no review rule has no decision; then an approval and no change request count.
-  const approved =
-    snapshot.reviewDecision === "APPROVED" || (snapshot.reviewDecision === null && approvalIds.length > 0 && !changesRequested);
-  const ciOk = ci.kind === "none" || (ci.kind === "settled" && ci.verdict === "pass");
+  return snapshot.reviewDecision === "APPROVED" || (snapshot.reviewDecision === null && approvalIds.length > 0 && !changesRequested);
+}
+
+function readiness(snapshot: Snapshot, approved: boolean): Readiness {
+  // Only required checks gate a merge, so a red check that isn't required never blocks "Ready to merge",
+  // whatever the setting says about waking for it.
+  const gate = readCi(snapshot.ci, "ignore");
+  const ciOk = gate.kind === "none" || (gate.kind === "settled" && gate.verdict === "pass");
   if (!approved || !ciOk) return "not-ready";
   if (snapshot.isDraft) return "draft-approved";
   if (snapshot.mergeState === "UNKNOWN") return "unknown";
@@ -105,10 +112,12 @@ export function readPr(snapshot: Snapshot, optional: OptionalFailures = "wake"):
   const ci = readCi(snapshot.ci, optional);
   const approvals = snapshot.opinions.filter((opinion) => opinion.state === "APPROVED");
   const approvalIds = approvals.map((opinion) => opinion.id).sort();
+  const approved = isApproved(snapshot, approvalIds);
   return {
     sha: snapshot.headSha,
     ci,
-    readiness: readiness(snapshot, ci, approvalIds),
+    readiness: readiness(snapshot, approved),
+    approved,
     approvalIds,
     approvers: approvals.map((opinion) => opinion.author),
     queued: snapshot.queued,

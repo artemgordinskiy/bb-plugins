@@ -143,12 +143,13 @@ test("a send bb refuses with 409 is rolled back and sent on the next poll", asyn
   });
 });
 
-test("isRefusal: a 409 status or an HTTP 409 message, and nothing else", () => {
-  assert.equal(isRefusal(Object.assign(new Error("conflict"), { status: 409 })), true);
+test("isRefusal: only bb's thread_not_writable 409, and nothing else", () => {
   assert.equal(isRefusal(new Error("BbHttpError: HTTP 409: Thread is already active")), true);
-  assert.equal(isRefusal(new Error("HTTP 500: boom")), false);
+  assert.equal(isRefusal(Object.assign(new Error("Thread is stopping"), { status: 409 })), true);
+  assert.equal(isRefusal(Object.assign(new Error("not writable"), { code: "thread_not_writable" })), true);
+  assert.equal(isRefusal(Object.assign(new Error("conflict"), { status: 409 })), false, "another 409 counts as delivered");
+  assert.equal(isRefusal(new Error("HTTP 500: Thread is busy")), false);
   assert.equal(isRefusal(new Error("already_active")), false);
-  assert.equal(isRefusal("HTTP 4090"), false);
 });
 
 test("threads.send throws: unknown, and no second wake", async () => {

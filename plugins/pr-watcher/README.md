@@ -58,7 +58,7 @@ With the default settings:
 | A review with inline comments or text, changes requested, or a comment from an `OWNER`, `MEMBER` or `COLLABORATOR` | Yes |
 | A review from a listed bot | Yes |
 | An approval with no comment | No, it counts toward "Ready to merge" |
-| Approved, CI green, GitHub's merge state `CLEAN` (or `HAS_HOOKS`, `UNSTABLE`), not queued | Once per set of approvals. A restack or another approval stays quiet; approvals dismissed and given again wake again |
+| Approved, required checks green, GitHub's merge state `CLEAN` (or `HAS_HOOKS`, `UNSTABLE`), not queued | Once per set of approvals. A restack or another approval stays quiet. Once the PR stops being approved (changes requested, approvals dismissed), the next approval wakes again. A red check that isn't required never blocks it |
 | An approved, green draft | Once, as "Still a draft" |
 | The PR leaves the merge queue, or auto-merge is turned off, without merging | Yes |
 
@@ -116,8 +116,9 @@ bb plugin config pr-watcher set botAuthors 'coderabbitai, my-review-bot'
   is removed, or when a branch-bound watch's checkout no longer resolves to that
   PR. If the owner is archived or deleted, the nearest eligible parent in the same
   environment takes over; otherwise the watch ends.
-- **Delivery.** A wake is recorded before it is sent. A send bb refuses (HTTP 409,
-  for a thread that just started a turn) is undone and retried on the next poll.
+- **Delivery.** A wake is recorded before it is sent. A send bb refuses before
+  dispatching it (its `thread_not_writable` 409, such as "Thread is already
+  active") is undone and retried on the next poll.
   If a send is interrupted or its result is lost, the wake counts as delivered, so
   a rare wake can be lost but none is repeated.
 

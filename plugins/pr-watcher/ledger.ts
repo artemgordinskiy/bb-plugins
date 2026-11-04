@@ -160,12 +160,21 @@ export function decide(
   return { ci: ci?.report ?? null, merge: merge.events, items, optionalFailed, changes: { ...ci?.changes, ...merge.changes } };
 }
 
-/** Keys the ledger writes as it watches, with no wake: the 0.2 baseline of an older watch, and the merge queue. */
+/**
+ * Keys the ledger writes as it watches, with no wake: the 0.2 baseline of an older watch, the merge
+ * queue, and forgetting "ready" once the PR stops being approved, so the next approval wakes even if
+ * an earlier approval survived. CI running or a merge state dropping, as in a restack, keeps it.
+ */
 function observations(reading: PrReading, keys: Map<string, string>, rules: WakeRules): KeyChanges {
   if (keys.get("v") !== VERSION) return stateKeys(reading);
-  if (reading.queued && !keys.has("queued")) return { queued: "1" };
-  if (!reading.queued && keys.has("queued") && !rules.queueWakes) return { queued: null };
-  return {};
+  const changes: KeyChanges = {};
+  if (reading.queued && !keys.has("queued")) changes["queued"] = "1";
+  if (!reading.queued && keys.has("queued") && !rules.queueWakes) changes["queued"] = null;
+  if (!reading.approved) {
+    if (keys.has("ready")) changes["ready"] = null;
+    if (keys.has("draft")) changes["draft"] = null;
+  }
+  return changes;
 }
 
 export class Ledger {

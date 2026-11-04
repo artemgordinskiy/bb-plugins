@@ -84,8 +84,9 @@ Lines you may see inside the data:
 - CI passes after a reported failure, on that commit or a later one: once.
 - A review with inline comments or text, a change request, or a comment from an
   `OWNER`, `MEMBER` or `COLLABORATOR`; a review from a bot in `botAuthors`.
-- Ready to merge: approved, CI green, GitHub's merge state `CLEAN` (or
-  `HAS_HOOKS`, `UNSTABLE`), not queued. Once per set of approvals.
+- Ready to merge: approved, required checks green, GitHub's merge state
+  `CLEAN` (or `HAS_HOOKS`, `UNSTABLE`), not queued. Once per set of approvals,
+  and again after a change request or dismissal is followed by an approval.
 - An approved, green draft: once.
 - The PR leaves the merge queue, or auto-merge is turned off, without merging.
 
