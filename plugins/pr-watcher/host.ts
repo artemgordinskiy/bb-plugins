@@ -29,7 +29,9 @@ const QUERY = `query ($owner: String!, $repo: String!, $number: Int!) {
   viewer { login }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      url state isDraft title
+      url state isDraft title reviewDecision mergeStateStatus isInMergeQueue
+      autoMergeRequest { enabledAt }
+      latestOpinionatedReviews(first: 100, writersOnly: true) { nodes { id state author { login } } }
       commits(last: 1) { nodes { commit {
         oid
         statusCheckRollup {
@@ -38,8 +40,11 @@ const QUERY = `query ($owner: String!, $repo: String!, $number: Int!) {
             pageInfo { hasNextPage }
             nodes {
               __typename
-              ... on CheckRun { name status conclusion detailsUrl }
-              ... on StatusContext { context state targetUrl }
+              ... on CheckRun {
+                name status conclusion detailsUrl startedAt isRequired(pullRequestNumber: $number)
+                checkSuite { app { slug } workflowRun { workflow { name } } }
+              }
+              ... on StatusContext { context state targetUrl isRequired(pullRequestNumber: $number) }
             }
           }
         }
@@ -70,6 +75,19 @@ const responseSchema = z.object({
             state: z.enum(["OPEN", "CLOSED", "MERGED"]),
             isDraft: z.boolean(),
             title: z.string(),
+            reviewDecision: z.enum(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"]).nullable(),
+            mergeStateStatus: z.string(),
+            isInMergeQueue: z.boolean(),
+            autoMergeRequest: z.object({ enabledAt: z.string().nullable() }).nullable(),
+            latestOpinionatedReviews: z.object({
+              nodes: z.array(
+                z.object({
+                  id: z.string(),
+                  state: z.enum(["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED", "PENDING"]),
+                  author: z.object({ login: z.string() }).nullable(),
+                }),
+              ),
+            }),
             commits: z.object({
               nodes: z.array(
                 z.object({
@@ -88,12 +106,21 @@ const responseSchema = z.object({
                                 status: z.string(),
                                 conclusion: z.string().nullable(),
                                 detailsUrl: z.string().nullable(),
+                                startedAt: z.string().nullable(),
+                                isRequired: z.boolean(),
+                                checkSuite: z
+                                  .object({
+                                    app: z.object({ slug: z.string() }).nullable(),
+                                    workflowRun: z.object({ workflow: z.object({ name: z.string() }) }).nullable(),
+                                  })
+                                  .nullable(),
                               }),
                               z.object({
                                 __typename: z.literal("StatusContext"),
                                 context: z.string(),
                                 state: z.string(),
                                 targetUrl: z.string().nullable(),
+                                isRequired: z.boolean(),
                               }),
                             ]),
                           ),
@@ -233,11 +260,35 @@ function toSnapshot(response: z.infer<typeof responseSchema>): Snapshot | null {
       hasNextPage: rollup?.contexts.pageInfo.hasNextPage ?? false,
       checks: (rollup?.contexts.nodes ?? []).map((node) =>
         node.__typename === "CheckRun"
-          ? { kind: "run", name: node.name, status: node.status, conclusion: node.conclusion, url: node.detailsUrl }
-          : { kind: "context", name: node.context, status: node.state, conclusion: null, url: node.targetUrl || null },
+          ? {
+              kind: "run",
+              name: node.name,
+              status: node.status,
+              conclusion: node.conclusion,
+              url: node.detailsUrl,
+              startedAt: node.startedAt,
+              required: node.isRequired,
+              workflow: node.checkSuite?.workflowRun?.workflow.name ?? node.checkSuite?.app?.slug ?? null,
+            }
+          : {
+              kind: "context",
+              name: node.context,
+              status: node.state,
+              conclusion: null,
+              url: node.targetUrl || null,
+              startedAt: null,
+              required: node.isRequired,
+              workflow: null,
+            },
       ),
     },
     items: [...reviews, ...comments],
+    reviewDecision: pr.reviewDecision,
+    mergeState: cut(pr.mergeStateStatus, 40),
+    queued: pr.isInMergeQueue || pr.autoMergeRequest !== null,
+    opinions: pr.latestOpinionatedReviews.nodes.flatMap((node) =>
+      node.state === "PENDING" ? [] : [{ id: node.id, author: node.author?.login ?? "", state: node.state }],
+    ),
   };
 }
 

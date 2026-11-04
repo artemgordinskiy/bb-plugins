@@ -38,6 +38,9 @@ const failed = (name: string, url: string | null = null): Check => ({
   status: "COMPLETED",
   conclusion: "FAILURE",
   url,
+  startedAt: null,
+  required: false,
+  workflow: null,
 });
 
 /** Everything between the frame lines. */

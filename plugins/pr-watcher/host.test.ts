@@ -62,8 +62,18 @@ const pullRequest = (over: Record<string, unknown> = {}) => ({
             contexts: {
               pageInfo: { hasNextPage: true },
               nodes: [
-                { __typename: "CheckRun", name: "lint", status: "COMPLETED", conclusion: "FAILURE", detailsUrl: "https://github.com/acme/api/runs/1" },
-                { __typename: "StatusContext", context: "ci/ext", state: "PENDING", targetUrl: "" },
+                {
+                  __typename: "CheckRun",
+                  name: "lint",
+                  status: "COMPLETED",
+                  conclusion: "FAILURE",
+                  detailsUrl: "https://github.com/acme/api/runs/1",
+                  startedAt: "2026-10-30T09:00:00Z",
+                  isRequired: true,
+                  checkSuite: { app: { slug: "github-actions" }, workflowRun: { workflow: { name: "Lint" } } },
+                },
+                { __typename: "CheckRun", name: "deploy", status: "QUEUED", conclusion: null, detailsUrl: null, startedAt: null, isRequired: false, checkSuite: { app: { slug: "vercel" }, workflowRun: null } },
+                { __typename: "StatusContext", context: "ci/ext", state: "PENDING", targetUrl: "", isRequired: false },
               ],
             },
           },
@@ -84,6 +94,16 @@ const pullRequest = (over: Record<string, unknown> = {}) => ({
         comments: { totalCount: 3 },
       },
       { id: "draft", state: "PENDING", url: "u", body: "", submittedAt: null, author: null, authorAssociation: "NONE", comments: { totalCount: 0 } },
+    ],
+  },
+  reviewDecision: "APPROVED",
+  mergeStateStatus: "CLEAN",
+  isInMergeQueue: false,
+  autoMergeRequest: { enabledAt: "2026-10-30T12:00:00Z" },
+  latestOpinionatedReviews: {
+    nodes: [
+      { id: "O1", state: "APPROVED", author: { login: "alice" } },
+      { id: "O2", state: "PENDING", author: null },
     ],
   },
   comments: {
@@ -147,6 +167,8 @@ test("snapshot: sends the query with typed variables and no working directory in
   assert.ok(sent.includes("reviews(last: 100)"));
   assert.ok(sent.includes("comments(last: 100)"));
   assert.ok(sent.includes("contexts(first: 100)"));
+  assert.ok(sent.includes("isRequired(pullRequestNumber: $number)"));
+  assert.ok(sent.includes("latestOpinionatedReviews(first: 100, writersOnly: true)"));
 });
 
 test("snapshot: maps the response", async () => {
@@ -163,8 +185,18 @@ test("snapshot: maps the response", async () => {
     rollup: "FAILURE",
     hasNextPage: true,
     checks: [
-      { kind: "run", name: "lint", status: "COMPLETED", conclusion: "FAILURE", url: "https://github.com/acme/api/runs/1" },
-      { kind: "context", name: "ci/ext", status: "PENDING", conclusion: null, url: null },
+      {
+        kind: "run",
+        name: "lint",
+        status: "COMPLETED",
+        conclusion: "FAILURE",
+        url: "https://github.com/acme/api/runs/1",
+        startedAt: "2026-10-30T09:00:00Z",
+        required: true,
+        workflow: "Lint",
+      },
+      { kind: "run", name: "deploy", status: "QUEUED", conclusion: null, url: null, startedAt: null, required: false, workflow: "vercel" },
+      { kind: "context", name: "ci/ext", status: "PENDING", conclusion: null, url: null, startedAt: null, required: false, workflow: null },
     ],
   });
   const [review, comment] = snapshot.items;
@@ -177,6 +209,10 @@ test("snapshot: maps the response", async () => {
   assert.equal(comment?.author, "");
   assert.equal(comment?.authorIsBot, false);
   assert.equal(comment?.kind, "comment");
+  assert.equal(snapshot.reviewDecision, "APPROVED");
+  assert.equal(snapshot.mergeState, "CLEAN");
+  assert.equal(snapshot.queued, true, "auto-merge counts as queued");
+  assert.deepEqual(snapshot.opinions, [{ id: "O1", author: "alice", state: "APPROVED" }], "a pending opinion is left out");
 });
 
 test("snapshot: no rollup yet", async () => {

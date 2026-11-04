@@ -573,7 +573,7 @@ for (const [name, ci] of [
   ["a pending rollup with every check finished", { rollup: "PENDING", checks: [check()], hasNextPage: false }],
   [
     "a terminal rollup with a check unfinished",
-    { rollup: "FAILURE", checks: [check({ conclusion: "FAILURE" }), check({ status: "IN_PROGRESS", conclusion: null })], hasNextPage: false },
+    { rollup: "FAILURE", checks: [check({ conclusion: "FAILURE" }), check({ name: "build", status: "IN_PROGRESS", conclusion: null })], hasNextPage: false },
   ],
 ] as const) {
   test(`${name} report nothing`, async () => {

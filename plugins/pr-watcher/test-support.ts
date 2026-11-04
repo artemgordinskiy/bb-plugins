@@ -51,6 +51,9 @@ export const check = (overrides: Partial<Check> = {}): Check => ({
   status: "COMPLETED",
   conclusion: "SUCCESS",
   url: `${PR}/checks`,
+  startedAt: "2026-10-30T11:00:00Z",
+  required: false,
+  workflow: "CI",
   ...overrides,
 });
 
@@ -96,6 +99,10 @@ export const snapshot = (overrides: Partial<Snapshot> = {}): Snapshot => ({
   headSha: SHA,
   ci: running,
   items: [],
+  reviewDecision: null,
+  mergeState: "BLOCKED",
+  queued: false,
+  opinions: [],
   ...overrides,
 });
 

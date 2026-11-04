@@ -1,17 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Check, Snapshot, SnapshotItem } from "./contract.ts";
+import type { Check, SnapshotItem } from "./contract.ts";
+import type { CiReading } from "./reading.ts";
 import {
   ACTIVE_POLL_MS,
   ciReport,
-  type CiState,
   classifyNew,
   IDLE_WINDOW_MS,
   IDLE_POLL_MS,
   isRelevant,
   nextPollDelay,
   parseBotAuthors,
-  readCi,
 } from "./triggers.ts";
 
 const BOTS = parseBotAuthors("copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector");
@@ -22,13 +21,10 @@ const run = (name: string, status = "COMPLETED", conclusion: string | null = "SU
   status,
   conclusion,
   url: null,
+  startedAt: null,
+  required: false,
+  workflow: null,
 });
-const context = (name: string, state: string): Check => ({ kind: "context", name, status: state, conclusion: null, url: null });
-const ci = (
-  rollup: Snapshot["ci"]["rollup"],
-  checks: Check[],
-  hasNextPage = false,
-): Snapshot["ci"] => ({ rollup, checks, hasNextPage });
 
 const item = (over: Partial<SnapshotItem> = {}): SnapshotItem => ({
   id: "i1",
@@ -45,56 +41,13 @@ const item = (over: Partial<SnapshotItem> = {}): SnapshotItem => ({
 
 const relevant = (over: Partial<SnapshotItem>) => isRelevant(item(over), "viewer", BOTS);
 
-test("readCi: no checks is no CI, even with a terminal rollup", () => {
-  assert.deepEqual(readCi(ci(null, [])), { kind: "none" });
-  assert.deepEqual(readCi(ci("SUCCESS", [])), { kind: "none" });
-});
-
-test("readCi: an unfinished check keeps CI running whatever the rollup says", () => {
-  assert.deepEqual(readCi(ci("FAILURE", [run("a", "IN_PROGRESS", null)])), { kind: "running" });
-  assert.deepEqual(readCi(ci("SUCCESS", [run("a"), context("b", "PENDING")])), { kind: "running" });
-  assert.deepEqual(readCi(ci("SUCCESS", [context("b", "EXPECTED")])), { kind: "running" });
-});
-
-test("readCi: a pending rollup with every listed check finished is still running", () => {
-  assert.deepEqual(readCi(ci("PENDING", [run("a")])), { kind: "running" });
-  assert.deepEqual(readCi(ci("EXPECTED", [run("a")])), { kind: "running" });
-});
-
-test("readCi: the verdict comes from the rollup", () => {
-  assert.deepEqual(readCi(ci("SUCCESS", [run("a")])), { kind: "settled", verdict: "pass", failed: [] });
-  const failed = readCi(ci("FAILURE", [run("a"), run("b", "COMPLETED", "FAILURE")]));
-  assert.equal(failed.kind === "settled" && failed.verdict, "fail");
-  assert.equal(readCi(ci("ERROR", [context("a", "ERROR")])).kind, "settled");
-});
-
-test("readCi: failed checks skip the conclusions that count as fine", () => {
-  const checks = [
-    run("ok"),
-    run("neutral", "COMPLETED", "NEUTRAL"),
-    run("skipped", "COMPLETED", "SKIPPED"),
-    run("bad", "COMPLETED", "FAILURE"),
-    run("cancelled", "COMPLETED", "CANCELLED"),
-    run("timed out", "COMPLETED", "TIMED_OUT"),
-    context("ctx ok", "SUCCESS"),
-    context("ctx bad", "FAILURE"),
-    context("ctx err", "ERROR"),
-  ];
-  const state = readCi(ci("FAILURE", checks));
-  assert.ok(state.kind === "settled");
-  assert.deepEqual(
-    state.failed.map((check) => check.name),
-    ["bad", "cancelled", "timed out", "ctx bad", "ctx err"],
-  );
-});
-
-test("readCi: past 100 checks a terminal rollup is unsupported, never settled", () => {
-  assert.deepEqual(readCi(ci("FAILURE", [run("a", "COMPLETED", "FAILURE")], true)), { kind: "unsupported" });
-  assert.deepEqual(readCi(ci("SUCCESS", [run("a")], true)), { kind: "unsupported" });
-});
-
-const pass: CiState = { kind: "settled", verdict: "pass", failed: [] };
-const fail = { kind: "settled", verdict: "fail", failed: [run("a", "COMPLETED", "FAILURE")] } satisfies CiState;
+const pass: CiReading = { kind: "settled", verdict: "pass", failed: [], optionalFailed: [] };
+const fail = {
+  kind: "settled",
+  verdict: "fail",
+  failed: [{ ...run("a", "COMPLETED", "FAILURE"), key: "run::a" }],
+  optionalFailed: [],
+} satisfies CiReading;
 
 test("ciReport: the first settled observation of a SHA reports", () => {
   assert.deepEqual(ciReport("abc", pass, null), { kind: "passed", sha: "abc" });

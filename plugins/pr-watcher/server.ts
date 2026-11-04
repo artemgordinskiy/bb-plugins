@@ -14,7 +14,8 @@ import {
 import { type CheckoutResult, deliver, type DeliveryContext, startupSweep, WorkClock } from "./delivery.ts";
 import { branchBound, claimKind, findHandoff, isEligible, type ThreadFacts } from "./ownership.ts";
 import { type Binding, type ClaimedBy, MIGRATIONS, Store } from "./store.ts";
-import { type CiState, classifyNew, IDLE_POLL_MS, isRelevant, nextPollDelay, parseBotAuthors, readCi } from "./triggers.ts";
+import { type CiReading, ciLabel, mergeLabel, readPr } from "./reading.ts";
+import { classifyNew, IDLE_POLL_MS, isRelevant, nextPollDelay, parseBotAuthors } from "./triggers.ts";
 
 const TOOL_NAME = "pr_watch";
 const SKILL_NAME = "pr-watcher";
@@ -64,12 +65,7 @@ const describeError = (error: unknown) => (error instanceof Error ? error.messag
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-function ciLabel(ci: CiState): string {
-  if (ci.kind === "settled") return ci.verdict === "pass" ? "passing" : "failing";
-  return ci.kind;
-}
-
-function ciPhrase(ci: CiState): string {
+function ciPhrase(ci: CiReading): string {
   if (ci.kind === "settled") return ci.verdict === "pass" ? "CI passing" : "CI failing";
   if (ci.kind === "running") return "CI running";
   return ci.kind === "unsupported" ? "CI over 100 checks" : "no CI yet";
@@ -210,7 +206,8 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
     store.recordNew(prUrl, classifyNew(snapshot, store.knownIds(prUrl), bots));
     latest.set(prUrl, snapshot);
     const now = deps.now();
-    store.setNextPoll(prUrl, now + nextPollDelay(readCi(snapshot.ci), idleAt.get(prUrl) ?? null, now));
+    const reading = readPr(snapshot);
+    store.setNextPoll(prUrl, now + nextPollDelay(reading.ci, idleAt.get(prUrl) ?? null, now));
 
     const checkout = async (): Promise<CheckoutResult> => {
       try {
@@ -223,7 +220,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
       }
       return "unknown";
     };
-    await deliver(delivery, prUrl, pr, snapshot, checkout);
+    await deliver(delivery, prUrl, pr, snapshot, reading, checkout);
   }
 
   const schedulePoll = (prUrl: string) =>
@@ -245,7 +242,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
   function enroll(owner: Omit<Binding, "prUrl" | "since" | "nextPollAt" | "mayBeMissing" | "lastDeliveryAt" | "lastOutcome">, snapshot: Snapshot): string {
     const prUrl = snapshot.url;
     const now = deps.now();
-    const ci = readCi(snapshot.ci);
+    const { ci } = readPr(snapshot);
     store.enroll(
       { ...owner, prUrl, since: now, nextPollAt: now + nextPollDelay(ci, null, now), mayBeMissing: false, lastDeliveryAt: null, lastOutcome: null },
       {
@@ -377,14 +374,16 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
 
   function statusRow(binding: Binding): StatusRow {
     const snapshot = latest.get(binding.prUrl);
+    const reading = snapshot ? readPr(snapshot) : null;
     return {
       pr: binding.prUrl,
       thread: binding.threadId,
       claimedBy: binding.claimedBy,
       since: binding.since,
       branchBound: binding.branchBound,
-      headSha: snapshot?.headSha ?? null,
-      ci: snapshot ? ciLabel(readCi(snapshot.ci)) : "unknown",
+      headSha: reading?.sha ?? null,
+      ci: reading ? ciLabel(reading.ci) : "unknown",
+      merge: reading ? mergeLabel(reading) : "unknown",
       pendingItems: store.pendingItems(binding.prUrl).length,
       held: held.get(binding.prUrl) ?? null,
       mayBeMissing: binding.mayBeMissing,

@@ -36,6 +36,12 @@ const checkSchema = z.object({
   status: z.string(),
   conclusion: z.string().nullable(),
   url: z.string().nullable(),
+  /** Null for a status context, and for a run that hasn't started. */
+  startedAt: z.string().nullable().default(null),
+  /** Required by the base branch's rules for this pull request. */
+  required: z.boolean().default(false),
+  /** The workflow or app that ran the check, so two workflows' jobs with one name stay apart. */
+  workflow: z.string().nullable().default(null),
 });
 
 const itemSchema = z.object({
@@ -64,6 +70,15 @@ const snapshotSchema = z.object({
     hasNextPage: z.boolean(),
   }),
   items: z.array(itemSchema).max(PAGE_SIZE * 2),
+  reviewDecision: z.enum(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"]).nullable().default(null),
+  mergeState: z.string().max(40).default("UNKNOWN"),
+  /** In the merge queue, or set to merge automatically. */
+  queued: z.boolean().default(false),
+  /** Each reviewer's current approval or change request. */
+  opinions: z
+    .array(z.object({ id: z.string(), author: z.string(), state: z.enum(["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED"]) }))
+    .max(PAGE_SIZE)
+    .default([]),
 });
 
 export type Snapshot = z.infer<typeof snapshotSchema>;
@@ -101,6 +116,7 @@ const statusRowSchema = z.object({
   branchBound: z.boolean(),
   headSha: z.string().nullable(),
   ci: z.string(),
+  merge: z.string(),
   pendingItems: z.number(),
   held: z.string().nullable(),
   mayBeMissing: z.boolean(),

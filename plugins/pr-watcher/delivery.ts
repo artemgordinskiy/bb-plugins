@@ -3,7 +3,8 @@ import type { PullRequestRef, Snapshot } from "./contract.ts";
 import { buildMessage } from "./message.ts";
 import { isEligible } from "./ownership.ts";
 import type { Binding, PendingItem, Reservation, Store } from "./store.ts";
-import { type CiReport, ciReport, readCi } from "./triggers.ts";
+import type { PrReading } from "./reading.ts";
+import { type CiReport, ciReport } from "./triggers.ts";
 
 export const QUIET_MS = 120_000;
 
@@ -153,13 +154,14 @@ export async function deliver(
   prUrl: string,
   pr: PullRequestRef,
   snapshot: Snapshot,
+  reading: PrReading,
   checkout: () => Promise<CheckoutResult>,
 ): Promise<void> {
   const { store, held } = ctx;
   const binding = store.binding(prUrl);
   if (!binding) return;
   const items = store.pendingItems(prUrl);
-  const report = ciReport(snapshot.headSha, readCi(snapshot.ci), store.reportedSha(prUrl, snapshot.headSha));
+  const report = ciReport(reading.sha, reading.ci, store.reportedSha(prUrl, reading.sha));
   if (items.length === 0 && !report) {
     held.delete(prUrl);
     return;
