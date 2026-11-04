@@ -39,7 +39,7 @@ const failed = (name: string, url: string | null = null): Check => ({
   conclusion: "FAILURE",
   url,
   startedAt: null,
-  required: false,
+  required: true,
   workflow: null,
 });
 
@@ -280,4 +280,19 @@ test("cleanUrl accepts only this repository and short URLs", () => {
   assert.equal(cleanUrl(`https://github.com/acme/api/${"x".repeat(300)}`, pr), null);
   assert.equal(cleanUrl("https://github.com/acme/api/a b", pr), null);
   assert.equal(cleanUrl(null, pr), null);
+});
+
+test("merge events and checks that aren't required are rendered inside the frame", () => {
+  const optional = { ...failed("types"), required: false };
+  const text = buildMessage({
+    ...input({ ci: { kind: "failed", sha: "abc1234", checks: [failed("lint"), optional] } }),
+    merge: [{ kind: "ready", approvers: ["alice", "bad login!"] }, { kind: "draft-approved", approvers: [] }, { kind: "left-queue" }],
+    optionalFailed: [optional],
+  });
+  assert.match(text, /CI failed on abc1234: lint, types \(not required\)/);
+  assert.match(text, /Also failing, not required: types \(not required\)/);
+  assert.match(text, /Ready to merge: approved by @alice, \(unknown author\), checks green, GitHub says it can merge\./);
+  assert.match(text, /Still a draft: approved and checks green\./);
+  assert.match(text, /Left the merge queue without merging/);
+  assert.ok(text.indexOf("Left the merge queue") < text.indexOf("End of GitHub data."));
 });

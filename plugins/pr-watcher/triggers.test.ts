@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { DEFAULT_CONFIG, parseBotAuthors, parseRoles } from "./config.ts";
 import type { SnapshotItem } from "./contract.ts";
 import {
   ACTIVE_POLL_MS,
@@ -8,10 +9,9 @@ import {
   IDLE_POLL_MS,
   isRelevant,
   nextPollDelay,
-  parseBotAuthors,
 } from "./triggers.ts";
 
-const BOTS = parseBotAuthors("copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector");
+const BOTS = DEFAULT_CONFIG.feedback;
 
 const item = (over: Partial<SnapshotItem> = {}): SnapshotItem => ({
   id: "i1",
@@ -35,7 +35,7 @@ test("parseBotAuthors: trims, lowercases and strips [bot]", () => {
 test("isRelevant: humans count through any item by association", () => {
   for (const association of ["OWNER", "MEMBER", "COLLABORATOR"]) {
     assert.equal(relevant({ association }), true);
-    assert.equal(relevant({ association, kind: "review", reviewState: "APPROVED" }), true);
+    assert.equal(relevant({ association, kind: "review", reviewState: "APPROVED", excerpt: "One nit" }), true);
   }
 });
 
@@ -61,8 +61,8 @@ test("isRelevant: all four default bots count through reviews", () => {
 });
 
 test("isRelevant: the setting works with the REST [bot] form", () => {
-  const bots = parseBotAuthors("coderabbitai[bot]");
-  const review = item({ author: "coderabbitai", authorIsBot: true, kind: "review", reviewState: "APPROVED" });
+  const bots = { ...BOTS, bots: parseBotAuthors("coderabbitai[bot]") };
+  const review = item({ author: "coderabbitai", authorIsBot: true, kind: "review", reviewState: "CHANGES_REQUESTED" });
   assert.equal(isRelevant(review, "viewer", bots), true);
 });
 
@@ -130,4 +130,18 @@ test("nextPollDelay: 5 min otherwise, including unsupported and settled CI", () 
   assert.equal(nextPollDelay({ kind: "none" }, null, 0), IDLE_POLL_MS);
   assert.equal(nextPollDelay({ kind: "unsupported" }, null, 0), IDLE_POLL_MS);
   assert.equal(nextPollDelay({ kind: "settled", verdict: "pass", failed: [], optionalFailed: [] }, null, 0), IDLE_POLL_MS);
+});
+
+test("isRelevant: a bare approval counts only when every approval wakes", () => {
+  const bare = { kind: "review" as const, reviewState: "APPROVED" as const, inlineCount: 0, excerpt: " " };
+  assert.equal(relevant(bare), false, "the default leaves it to Ready to merge");
+  assert.equal(isRelevant(item(bare), "viewer", { ...BOTS, bareApprovals: true }), true);
+  assert.equal(relevant({ ...bare, inlineCount: 1 }), true, "an approval with an inline comment counts");
+  assert.equal(relevant({ ...bare, excerpt: "LGTM, but rename the flag" }), true, "an approval with text counts");
+});
+
+test("isRelevant: the feedback roles come from the setting, in any case", () => {
+  const rules = { ...BOTS, roles: parseRoles(" owner , Contributor ") };
+  assert.equal(isRelevant(item({ association: "CONTRIBUTOR" }), "viewer", rules), true);
+  assert.equal(isRelevant(item({ association: "MEMBER" }), "viewer", rules), false);
 });

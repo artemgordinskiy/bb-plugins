@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { Config } from "./config.ts";
 import type { PullRequestRef, Snapshot } from "./contract.ts";
 import type { Ledger, Wake } from "./ledger.ts";
 import { buildMessage } from "./message.ts";
@@ -21,7 +22,8 @@ export type DeliveryContext = {
   ledger: Ledger;
   clock: WorkClock;
   now: () => number;
-  instructionLine: string;
+  /** The live settings: a save in Settings applies on the next poll. */
+  config: () => Config;
   /** Why a delivery is waiting, by PR URL. In memory: the next poll decides it again. */
   held: Map<string, string>;
   /** Ends the watch and everything kept for it. */
@@ -66,14 +68,14 @@ export class WorkClock {
     this.lastRunning.set(threadId, at);
   }
 
-  quiet(threadIds: string[], now: number): boolean {
-    if (now - this.startedAt < QUIET_MS) return false;
-    return threadIds.every((id) => now - (this.lastRunning.get(id) ?? 0) >= QUIET_MS);
+  quiet(threadIds: string[], now: number, quietMs = QUIET_MS): boolean {
+    if (now - this.startedAt < quietMs) return false;
+    return threadIds.every((id) => now - (this.lastRunning.get(id) ?? 0) >= quietMs);
   }
 
-  prune(now: number): void {
+  prune(now: number, quietMs = QUIET_MS): void {
     for (const [id, at] of this.lastRunning) {
-      if (now - at >= QUIET_MS) this.lastRunning.delete(id);
+      if (now - at >= quietMs) this.lastRunning.delete(id);
     }
   }
 }
@@ -100,7 +102,7 @@ export async function ownerHold(ctx: DeliveryContext, threadId: string): Promise
   for (const row of inventory.filter(isRunning)) clock.stamp(row.id, now());
   const work = workSet(threadId, inventory);
   if (work.some(isRunning)) return "work running";
-  return clock.quiet([threadId, ...work.map((row) => row.id)], now()) ? null : "quiet time";
+  return clock.quiet([threadId, ...work.map((row) => row.id)], now(), ctx.config().quietMs) ? null : "quiet time";
 }
 
 async function send(ctx: DeliveryContext, threadId: string, text: string, reservation: Reservation): Promise<void> {
@@ -139,10 +141,12 @@ function compose(ctx: DeliveryContext, binding: Binding, pr: PullRequestRef, sna
     url: binding.prUrl,
     title: snapshot.title,
     ci: wake.ci,
+    merge: wake.merge,
+    optionalFailed: wake.optionalFailed,
     items: wake.items,
     excerpts: new Map(snapshot.items.map((item) => [item.id, item.excerpt])),
     mayBeMissing: binding.mayBeMissing,
-    instructionLine: ctx.instructionLine,
+    instructionLine: ctx.config().instructionLine,
   });
 }
 
@@ -158,7 +162,7 @@ export async function deliver(
   const { store, ledger, held } = ctx;
   const binding = store.binding(prUrl);
   if (!binding) return;
-  const wake = ledger.next(prUrl, reading);
+  const wake = ledger.next(prUrl, reading, ctx.config().wake);
   if (!wake) {
     held.delete(prUrl);
     return;

@@ -25,6 +25,7 @@ import {
 const CHILD = "thr_child";
 const PARENT = "thr_parent";
 const SECOND = "thr_second";
+const EVERY_COMMIT = { settings: { ciPassWakes: "every-commit" } };
 
 const text = (result: unknown) =>
   typeof result === "string" ? result : ((result as { content: { text: string }[] }).content[0]?.text ?? "");
@@ -115,7 +116,7 @@ test("a URL claim goes ahead when the checkout can't be read, and isn't branch-b
 test("the checkout is compared by URL, so a renamed branch on the same PR keeps the watch", async () => {
   await watching(async (plugin) => {
     plugin.world.checkout = { outcome: "pull_request", url: PR, headRefName: "renamed" };
-    plugin.setSnapshot({ ci: passing });
+    plugin.setSnapshot({ ci: failing });
     await plugin.poll();
     assert.equal(plugin.world.sends.length, 1);
   });
@@ -151,12 +152,12 @@ for (const [name, change] of [
 test("a claim from another thread moves the owner and keeps pending, reported and seen", async () => {
   await watching(async (plugin) => {
     addThread(plugin, SECOND);
-    plugin.setSnapshot({ ci: passing });
+    plugin.setSnapshot({ ci: failing });
     await plugin.poll();
     assert.equal(plugin.world.sends.length, 1);
 
     makeBusy(plugin);
-    plugin.setSnapshot({ ci: passing, items: [comment("c1"), comment("c2")] });
+    plugin.setSnapshot({ ci: failing, items: [comment("c1"), comment("c2")] });
     await plugin.poll();
     assert.equal((await plugin.status()).bindings[0]?.pendingItems, 2);
 
@@ -167,7 +168,7 @@ test("a claim from another thread moves the owner and keeps pending, reported an
     assert.equal(plugin.world.sends.length, 2);
     assert.equal(plugin.world.sends[1]?.threadId, SECOND);
     assert.match(plugin.sentText(1), /comment c1/);
-    assert.doesNotMatch(plugin.sentText(1), /CI passed/);
+    assert.doesNotMatch(plugin.sentText(1), /CI failed/);
   });
 });
 
@@ -465,7 +466,7 @@ test("unwatch then watch baselines again", async () => {
 
 // CI
 
-test("a settled SHA fires once and a new SHA re-arms", async () => {
+test("with every-commit, a settled SHA fires once and a new SHA re-arms", async () => {
   await watching(async (plugin) => {
     plugin.setSnapshot({ ci: passing });
     await plugin.poll();
@@ -477,7 +478,7 @@ test("a settled SHA fires once and a new SHA re-arms", async () => {
     await plugin.poll();
     assert.equal(plugin.world.sends.length, 2);
     assert.match(plugin.sentText(1), /CI failed on fed4321: lint/);
-  });
+  }, EVERY_COMMIT);
 });
 
 test("a same-SHA re-run with the same verdict stays silent through a restart and a transfer", async () => {
@@ -525,7 +526,19 @@ test("a delivered pass that then fails on the same SHA stays silent", async () =
   });
 });
 
-test("a failure held and then passing sends one plain pass", async () => {
+test("a failure held and then passing sends nothing: the thread was never told it failed", async () => {
+  await watching(async (plugin) => {
+    makeBusy(plugin);
+    plugin.setSnapshot({ ci: failing });
+    await plugin.poll();
+    makeIdle(plugin);
+    plugin.setSnapshot({ ci: passing });
+    await plugin.poll();
+    assert.equal(plugin.world.sends.length, 0);
+  });
+});
+
+test("with every-commit, a failure held and then passing sends one plain pass", async () => {
   await watching(async (plugin) => {
     makeBusy(plugin);
     plugin.setSnapshot({ ci: failing });
@@ -536,7 +549,7 @@ test("a failure held and then passing sends one plain pass", async () => {
     await plugin.poll();
     assert.equal(plugin.world.sends.length, 1);
     assert.match(plugin.sentText(), /CI passed on abc1234/);
-  });
+  }, EVERY_COMMIT);
 });
 
 test("a failure delivered before a restart and a pass after it give one recovery", async () => {
@@ -552,8 +565,8 @@ test("a failure delivered before a restart and a pass after it give one recovery
   });
 });
 
-test("a PR claimed while failing stays silent when it passes on that SHA, and wakes on a new one", async () => {
-  await withPlugin({}, async (plugin) => {
+test("a PR claimed while failing stays silent when it passes on that SHA, and with every-commit wakes on a new one", async () => {
+  await withPlugin(EVERY_COMMIT, async (plugin) => {
     plugin.setSnapshot({ ci: failing });
     await plugin.claim();
     plugin.settle();
@@ -931,11 +944,11 @@ test("unwatch with no thread at all is refused", async () => {
 
 test("status prints every field, and --json matches the contract", async () => {
   await watching(async (plugin) => {
-    plugin.setSnapshot({ ci: passing });
+    plugin.setSnapshot({ ci: failing });
     await plugin.poll();
 
     const printed = (await plugin.cli(["status", THREAD])).stdout ?? "";
-    for (const expected of [PR, `thread: ${THREAD}`, "claimed by: agent", "since: 2026-10-30", "branch-bound", "head: abc1234", "ci: passing", "pending: 0"]) {
+    for (const expected of [PR, `thread: ${THREAD}`, "claimed by: agent", "since: 2026-10-30", "branch-bound", "head: abc1234", "ci: failing", "merge: not ready", "pending: 0"]) {
       assert.ok(printed.includes(expected), expected);
     }
     assert.match(printed, /last delivery: 2026-10-30T\S+ \(sent\)/);

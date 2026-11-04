@@ -133,7 +133,7 @@ export async function until(condition: () => boolean, what: string): Promise<voi
   throw new Error(`timed out waiting for ${what}`);
 }
 
-export type BootOptions = { settings?: Record<string, string> };
+export type BootOptions = { settings?: Record<string, string | number | boolean> };
 
 /** A plugin with a fake bb and fake gh behind it; every reply can be changed mid-test. */
 export async function boot(options: BootOptions = {}) {

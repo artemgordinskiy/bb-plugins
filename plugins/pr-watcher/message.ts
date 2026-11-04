@@ -1,6 +1,6 @@
 import type { Check, PullRequestRef } from "./contract.ts";
+import type { CiReport, MergeEvent } from "./ledger.ts";
 import type { PendingItem } from "./store.ts";
-import type { CiReport } from "./ledger.ts";
 
 export const MESSAGE_LIMIT = 3000;
 export const SAFETY_LINE = "Don't push, reply on GitHub or request reviewers without asking the user first.";
@@ -19,6 +19,9 @@ export type MessageInput = {
   url: string;
   title: string;
   ci: CiReport | null;
+  merge?: MergeEvent[];
+  /** Failing checks that aren't required, listed when something else woke. */
+  optionalFailed?: Check[];
   items: PendingItem[];
   /** Item id to excerpt, for items still in the latest snapshot. */
   excerpts: Map<string, string>;
@@ -52,10 +55,29 @@ const cleanSha = (sha: string) => (/^[0-9a-f]{7,64}$/i.test(sha) ? sha.slice(0, 
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-function failureLines(checks: Check[], sha: string, pr: PullRequestRef, maxLinks: number): string[] {
-  const names = checks.slice(0, MAX_SHOWN).map((check) => cleanText(check.name, CHECK_CHARS));
+const checkName = (check: Check) => `${cleanText(check.name, CHECK_CHARS)}${check.required ? "" : " (not required)"}`;
+
+function nameList(checks: Check[]): string {
+  const names = checks.slice(0, MAX_SHOWN).map(checkName);
   if (checks.length > MAX_SHOWN) names.push(`+${checks.length - MAX_SHOWN} more`);
-  const lines = [`  CI failed on ${cleanSha(sha)}${names.length > 0 ? `: ${names.join(", ")}` : ""}`];
+  return names.join(", ");
+}
+
+function approvedBy(approvers: string[]): string {
+  const logins = approvers.slice(0, MAX_SHOWN).map(cleanLogin);
+  if (approvers.length > MAX_SHOWN) logins.push(`+${approvers.length - MAX_SHOWN} more`);
+  return logins.length > 0 ? `approved by ${logins.join(", ")}` : "approved";
+}
+
+function mergeLine(event: MergeEvent): string {
+  if (event.kind === "ready") return `  Ready to merge: ${approvedBy(event.approvers)}, checks green, GitHub says it can merge.`;
+  if (event.kind === "draft-approved") return `  Still a draft: ${approvedBy(event.approvers)} and checks green.`;
+  return "  Left the merge queue without merging (or auto-merge was turned off).";
+}
+
+function failureLines(checks: Check[], sha: string, pr: PullRequestRef, maxLinks: number): string[] {
+  const names = nameList(checks);
+  const lines = [`  CI failed on ${cleanSha(sha)}${names ? `: ${names}` : ""}`];
   const links = checks.flatMap((check) => {
     const url = cleanUrl(check.url, pr);
     return url ? [`    ${cleanText(check.name, CHECK_CHARS)}: ${url}`] : [];
@@ -102,6 +124,8 @@ function render(input: MessageInput, withExcerpts: boolean, maxShown: number): s
     FRAME_OPEN,
     `  Title: ${cleanText(input.title, TITLE_CHARS)}`,
     ...(input.ci ? ciLines(input.ci, input.pr, maxShown) : []),
+    ...(input.optionalFailed?.length ? [`  Also failing, not required: ${nameList(input.optionalFailed)}`] : []),
+    ...(input.merge ?? []).map(mergeLine),
     ...(input.items.length > 0 ? ["  New feedback:", ...itemLines(input, withExcerpts, maxShown)] : []),
     ...(input.mayBeMissing ? ["  Some feedback may be missing; check the PR."] : []),
     FRAME_CLOSE,

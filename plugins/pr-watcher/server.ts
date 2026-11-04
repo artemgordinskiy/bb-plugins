@@ -3,6 +3,7 @@
 // that keeps every change to a PR in order. Delivery lives in delivery.ts.
 import { type BbPluginApi, cliCommand, defineCli, PluginCliError } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { SETTINGS, toConfig } from "./config.ts";
 import {
   type ActionOutput,
   hostContract,
@@ -16,7 +17,7 @@ import { branchBound, claimKind, findHandoff, isEligible, type ThreadFacts } fro
 import { baselineKeys, Ledger } from "./ledger.ts";
 import { type Binding, type ClaimedBy, MIGRATIONS, Store } from "./store.ts";
 import { type CiReading, ciLabel, mergeLabel, readPr } from "./reading.ts";
-import { classifyNew, IDLE_POLL_MS, isRelevant, nextPollDelay, parseBotAuthors } from "./triggers.ts";
+import { classifyNew, isRelevant, nextPollDelay } from "./triggers.ts";
 
 const TOOL_NAME = "pr_watch";
 const SKILL_NAME = "pr-watcher";
@@ -73,22 +74,11 @@ function ciPhrase(ci: CiReading): string {
 }
 
 export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
-  const settings = bb.settings.define({
-    instructionLine: {
-      type: "string",
-      label: "Instruction line",
-      description: "The action line near the end of every message. One line, up to 300 characters. Reload the plugin after changing it.",
-      default: "Check the failures and comments and propose fixes. Don't change anything until the user agrees.",
-    },
-    botAuthors: {
-      type: "string",
-      label: "Bot reviewers",
-      description: "Comma-separated bot logins whose reviews count. Reload the plugin after changing it.",
-      default: "copilot-pull-request-reviewer, coderabbitai, claude, chatgpt-codex-connector",
-    },
+  const settings = bb.settings.define(SETTINGS);
+  let config = toConfig(await settings.get());
+  settings.onChange((next) => {
+    config = toConfig(next);
   });
-  const values = await settings.get();
-  const bots = parseBotAuthors(values.botAuthors);
 
   const db = bb.storage.database();
   bb.storage.migrate(db, MIGRATIONS);
@@ -111,10 +101,10 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
   const delivery: DeliveryContext = {
     bb,
     store,
-    ledger: new Ledger(store),
+    ledger: new Ledger(store, deps.now),
     clock: new WorkClock(deps.now()),
     now: deps.now,
-    instructionLine: values.instructionLine,
+    config: () => config,
     held,
     end,
   };
@@ -188,7 +178,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
     const environment = await readEnvironment(binding.environmentId);
     if (!environment.ready) {
       held.set(prUrl, "environment not ready");
-      store.setNextPoll(prUrl, deps.now() + IDLE_POLL_MS);
+      store.setNextPoll(prUrl, deps.now() + config.idlePollMs);
       return;
     }
     const reply = await hosts.call("snapshot", pr, { hostId: environment.hostId }).catch((error: unknown) => {
@@ -196,7 +186,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
     });
     if (reply.outcome === "failed") {
       bb.log.warn(`Snapshot of ${prUrl} failed: ${reply.message}`);
-      store.setNextPoll(prUrl, deps.now() + IDLE_POLL_MS);
+      store.setNextPoll(prUrl, deps.now() + config.idlePollMs);
       return;
     }
     const { snapshot } = reply;
@@ -205,11 +195,11 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
       end(prUrl);
       return;
     }
-    store.recordNew(prUrl, classifyNew(snapshot, store.knownIds(prUrl), bots));
+    store.recordNew(prUrl, classifyNew(snapshot, store.knownIds(prUrl), config.feedback));
     latest.set(prUrl, snapshot);
     const now = deps.now();
-    const reading = readPr(snapshot);
-    store.setNextPoll(prUrl, now + nextPollDelay(reading.ci, idleAt.get(prUrl) ?? null, now));
+    const reading = readPr(snapshot, config.optionalFailures);
+    store.setNextPoll(prUrl, now + nextPollDelay(reading.ci, idleAt.get(prUrl) ?? null, now, config));
 
     const checkout = async (): Promise<CheckoutResult> => {
       try {
@@ -244,17 +234,17 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
   function enroll(owner: Omit<Binding, "prUrl" | "since" | "nextPollAt" | "mayBeMissing" | "lastDeliveryAt" | "lastOutcome">, snapshot: Snapshot): string {
     const prUrl = snapshot.url;
     const now = deps.now();
-    const reading = readPr(snapshot);
+    const reading = readPr(snapshot, config.optionalFailures);
     const { ci } = reading;
     store.enroll(
-      { ...owner, prUrl, since: now, nextPollAt: now + nextPollDelay(ci, null, now), mayBeMissing: false, lastDeliveryAt: null, lastOutcome: null },
+      { ...owner, prUrl, since: now, nextPollAt: now + nextPollDelay(ci, null, now, config), mayBeMissing: false, lastDeliveryAt: null, lastOutcome: null },
       {
         itemIds: snapshot.items.map((item) => item.id),
         keys: baselineKeys(reading),
       },
     );
     latest.set(prUrl, snapshot);
-    const earlier = snapshot.items.filter((item) => isRelevant(item, snapshot.viewerLogin, bots)).length;
+    const earlier = snapshot.items.filter((item) => isRelevant(item, snapshot.viewerLogin, config.feedback)).length;
     const tail = earlier > 0 ? `; ${plural(earlier, "earlier comment")} not reported` : "";
     return `watching ${prUrl} (#${parsePrUrl(prUrl)?.number}, ${ciPhrase(ci)}${tail})`;
   }
@@ -358,7 +348,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
 
   async function tick(): Promise<void> {
     const now = deps.now();
-    clock.prune(now);
+    clock.prune(now, config.quietMs);
     await Promise.all(store.due(now).map(({ prUrl }) => schedulePoll(prUrl)));
   }
 
@@ -377,7 +367,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
 
   function statusRow(binding: Binding): StatusRow {
     const snapshot = latest.get(binding.prUrl);
-    const reading = snapshot ? readPr(snapshot) : null;
+    const reading = snapshot ? readPr(snapshot, config.optionalFailures) : null;
     return {
       pr: binding.prUrl,
       thread: binding.threadId,
@@ -416,6 +406,7 @@ export async function setup(bb: BbPluginApi, deps: Deps): Promise<Watcher> {
         row.branchBound ? "branch-bound" : "not branch-bound",
         `head: ${row.headSha?.slice(0, 7) ?? "unknown"}`,
         ci,
+        `merge: ${row.merge}`,
         `pending: ${row.pendingItems}`,
         ...(row.held ? [`held: ${row.held}`] : []),
         ...(row.mayBeMissing ? ["may_be_missing"] : []),
