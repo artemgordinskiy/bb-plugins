@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { OptionalFailures } from "./reading.ts";
 
 export const DEFAULT_INSTRUCTION = "Check the failures and comments and propose fixes. Don't change anything until the user agrees.";
+export const DEFAULT_INFO_INSTRUCTION = "Nothing failed. Tell the user briefly what changed. Don't merge, push or change anything without their go.";
 
 const CI_PASS = ["after-failure", "first-and-after-failure", "every-commit"] as const;
 const CI_FAILURE = ["every-commit", "changed-checks"] as const;
@@ -21,6 +22,12 @@ export const SETTINGS = {
     label: "Instruction line",
     description: "The action line near the end of every message. One line, up to 300 characters.",
     default: DEFAULT_INSTRUCTION,
+  },
+  infoInstructionLine: {
+    type: "string",
+    label: "Instruction line when nothing failed",
+    description: "Used instead of the instruction line when a message has nothing to fix: CI now passing, ready to merge, or still a draft.",
+    default: DEFAULT_INFO_INSTRUCTION,
   },
   ciPassWakes: {
     type: "select",
@@ -143,6 +150,8 @@ export type FeedbackRules = {
 
 export type Config = {
   instructionLine: string;
+  /** For a wake with nothing to fix. */
+  infoInstructionLine: string;
   optionalFailures: OptionalFailures;
   wake: WakeRules;
   feedback: FeedbackRules;
@@ -170,6 +179,7 @@ export function parseRoles(setting: string): Set<string> {
 export function toConfig(values: SettingsValues): Config {
   return {
     instructionLine: values.instructionLine,
+    infoInstructionLine: values.infoInstructionLine,
     optionalFailures: pick(OPTIONAL, values.optionalCheckFailures, "wake"),
     wake: {
       ciPassWakes: pick(CI_PASS, values.ciPassWakes, "after-failure"),

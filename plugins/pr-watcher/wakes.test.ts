@@ -94,7 +94,7 @@ test("a saved setting applies on the next poll, with no reload", async () => {
     plugin.setSnapshot({ ci: passing });
     await plugin.poll();
     assert.equal(plugin.world.sends.length, 0);
-    await plugin.harness.setSettings({ ciPassWakes: "every-commit", instructionLine: "Just report." });
+    await plugin.harness.setSettings({ ciPassWakes: "every-commit", infoInstructionLine: "Just report." });
     plugin.setSnapshot({ headSha: NEW_SHA, ci: passing });
     await plugin.poll();
     assert.equal(plugin.world.sends.length, 1);
@@ -166,5 +166,19 @@ test("approved, changes requested, approved again: the re-approval wakes", async
     assert.equal(plugin.world.sends.length, 3);
     assert.match(plugin.sentText(1), /changes requested/);
     assert.match(plugin.sentText(2), /Ready to merge/);
+  });
+});
+
+test("a wake with nothing to fix carries the other instruction line", async () => {
+  await watching(async (plugin) => {
+    plugin.setSnapshot({ ci: failing });
+    await plugin.poll();
+    assert.match(plugin.sentText(0), /^Check the failures and comments and propose fixes\./m);
+    plugin.setSnapshot({ ci: passing });
+    await plugin.poll();
+    assert.match(plugin.sentText(1), /CI now passing/);
+    assert.match(plugin.sentText(1), /^Nothing failed\. Tell the user briefly what changed\. Don't merge, push or change anything without their go\.$/m);
+    assert.doesNotMatch(plugin.sentText(1), /propose fixes/);
+    assert.match(plugin.sentText(1), /^Don't push, reply on GitHub or request reviewers without asking the user first\.$/m, "the safety line stays");
   });
 });

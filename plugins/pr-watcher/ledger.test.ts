@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import Database from "better-sqlite3";
 import { DEFAULT_CONFIG, type WakeRules } from "./config.ts";
-import { baselineKeys, decide, Ledger } from "./ledger.ts";
+import { baselineKeys, decide, isActionable, Ledger } from "./ledger.ts";
 import type { CiReading, FailedCheck, PrReading } from "./reading.ts";
 import { type Binding, MIGRATIONS, type PendingItem, Store } from "./store.ts";
 
@@ -274,4 +274,15 @@ test("Ledger: a restack that only drops CI or merge state keeps 'ready', so it s
 test("decide: after a recovery on a later commit, a force-push back to the failed commit doesn't recover again", () => {
   const told = keys({ "ci:abc": "delivered:fail", "ci:fix": "delivered:pass", last: last("pass", "fix") });
   assert.equal(decide(reading(pass, "abc"), told, [], rules()), null);
+});
+
+test("isActionable: failures, feedback, optional failures and leaving the queue need a look; the rest only telling", () => {
+  const base = { ci: null, merge: [], items: [], optionalFailed: [], changes: {} };
+  assert.equal(isActionable({ ...base, ci: { kind: "failed", sha: "abc", checks: [] } }), true);
+  assert.equal(isActionable({ ...base, items: [item] }), true);
+  assert.equal(isActionable({ ...base, optionalFailed: [failedCheck("types", false)] }), true);
+  assert.equal(isActionable({ ...base, merge: [{ kind: "left-queue" }] }), true);
+  assert.equal(isActionable({ ...base, ci: { kind: "recovered", sha: "abc" } }), false);
+  assert.equal(isActionable({ ...base, ci: { kind: "passed", sha: "abc" } }), false);
+  assert.equal(isActionable({ ...base, merge: [{ kind: "ready", approvers: [] }, { kind: "draft-approved", approvers: [] }] }), false);
 });

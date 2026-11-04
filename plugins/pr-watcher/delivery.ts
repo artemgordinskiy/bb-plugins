@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { Config } from "./config.ts";
 import type { PullRequestRef, Snapshot } from "./contract.ts";
-import type { Ledger, Wake } from "./ledger.ts";
+import { isActionable, type Ledger, type Wake } from "./ledger.ts";
 import { buildMessage } from "./message.ts";
 import { isEligible } from "./ownership.ts";
 import type { PrReading } from "./reading.ts";
@@ -164,7 +164,7 @@ function compose(ctx: DeliveryContext, binding: Binding, pr: PullRequestRef, sna
     items: wake.items,
     excerpts: new Map(snapshot.items.map((item) => [item.id, item.excerpt])),
     mayBeMissing: binding.mayBeMissing,
-    instructionLine: ctx.config().instructionLine,
+    instructionLine: isActionable(wake) || binding.mayBeMissing ? ctx.config().instructionLine : ctx.config().infoInstructionLine,
   });
 }
 

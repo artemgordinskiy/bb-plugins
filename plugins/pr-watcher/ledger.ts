@@ -148,6 +148,20 @@ function mergeWakes(reading: PrReading, keys: Map<string, string>, rules: WakeRu
   return { events, changes };
 }
 
+/**
+ * Whether a wake has something to fix or look into: a CI failure, feedback, a failing check that
+ * isn't required, or leaving the merge queue. A recovery, a pass, "Ready to merge" or "Still a draft"
+ * alone only needs telling the user.
+ */
+export function isActionable(wake: Wake): boolean {
+  return (
+    wake.ci?.kind === "failed" ||
+    wake.items.length > 0 ||
+    wake.optionalFailed.length > 0 ||
+    wake.merge.some((event) => event.kind === "left-queue")
+  );
+}
+
 /** The next wake for a PR, or null when there is nothing new to tell. */
 export function decide(
   reading: PrReading,

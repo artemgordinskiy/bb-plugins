@@ -82,6 +82,7 @@ applies on the next poll; no reload is needed.
 | Setting | Default | Choices |
 | --- | --- | --- |
 | `instructionLine` | `Check the failures and comments and propose fixes. Don't change anything until the user agrees.` | The action line near the end of every message, cleaned to one line of at most 300 characters. The safety line after it can't be removed |
+| `infoInstructionLine` | `Nothing failed. Tell the user briefly what changed. Don't merge, push or change anything without their go.` | Used instead of `instructionLine` when a message has nothing to fix: CI now passing, ready to merge, or still a draft |
 | `ciPassWakes` | `after-failure` | `after-failure`: only a pass after a reported failure. `first-and-after-failure`: also the first verdict of a watch. `every-commit`: every pass on a new commit, as in 0.1 |
 | `ciFailureWakes` | `every-commit` | `changed-checks`: a failure on a new commit wakes only when the failing checks differ from the last reported failure |
 | `optionalCheckFailures` | `wake` | What a failing check that isn't required does. `wake`, marked `(not required)`. `mention`: listed only when something else wakes. `ignore` |
