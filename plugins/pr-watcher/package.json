@@ -1,7 +1,7 @@
 {
   "name": "bb-plugin-pr-watcher",
-  "version": "0.1.1",
-  "description": "Wakes the thread that owns a pull request when CI settles or new review feedback lands.",
+  "version": "0.2.0",
+  "description": "Wakes the thread that owns a pull request when CI fails or recovers, reviewers comment, or it is ready to merge.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "bb": {
     "name": "PR Watcher",
-    "description": "Wakes the thread that owns a pull request when CI settles or new review feedback lands.",
+    "description": "Wakes the thread that owns a pull request when CI fails or recovers, reviewers comment, or it is ready to merge.",
     "branding": {
       "icon": "GitPullRequest"
     },

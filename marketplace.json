@@ -62,7 +62,7 @@
     {
       "id": "pr-watcher",
       "displayName": "PR Watcher",
-      "description": "Wakes the thread that owns a pull request when CI settles or new review feedback lands.",
+      "description": "Wakes the thread that owns a pull request when CI fails or recovers, reviewers comment, or it is ready to merge.",
       "icon": "GitPullRequest",
       "tags": [
         "github",
@@ -76,7 +76,7 @@
         "git": {
           "url": "https://github.com/artemgordinskiy/bb-plugins.git",
           "subdir": "plugins/pr-watcher",
-          "range": "^0.1.0",
+          "range": "^0.2.0",
           "tagPrefix": "pr-watcher/"
         }
       }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { StatusOutput } from "./contract.ts";
-import { isRunning, QUIET_MS, type ThreadRow, WorkClock, workSet } from "./delivery.ts";
+import { isRefusal, isRunning, QUIET_MS, type ThreadRow, WorkClock, workSet } from "./delivery.ts";
 import { comment, failing, NEW_SHA, OTHER_PR, passing, PR, review, running, SHA, THREAD, threadRow, watching, withPlugin } from "./test-support.ts";
 
 const row = (overrides: Parameters<typeof threadRow>[0]) => threadRow(overrides) as unknown as ThreadRow;
@@ -123,6 +123,33 @@ for (const [name, deleteResult] of [
     });
   });
 }
+
+test("a send bb refuses with 409 is rolled back and sent on the next poll", async () => {
+  await watching(async (plugin) => {
+    plugin.world.sendResult = () => {
+      throw Object.assign(new Error("BbHttpError: HTTP 409: Thread is already active"), { status: 409 });
+    };
+    plugin.setSnapshot({ ci: failing, items: [comment("c1")] });
+    await plugin.poll();
+    assert.equal((await plugin.status()).bindings[0]?.lastOutcome, "cancelled");
+    assert.equal((await plugin.status()).bindings[0]?.pendingItems, 1);
+    plugin.world.sendResult = () => ({ ok: true, delivery: "sent" });
+    plugin.settle();
+    await plugin.poll();
+    assert.equal(plugin.world.sends.length, 2);
+    assert.match(plugin.sentText(1), /CI failed on abc1234/);
+    assert.match(plugin.sentText(1), /comment c1/);
+    assert.equal((await plugin.status()).bindings[0]?.lastOutcome, "sent");
+  });
+});
+
+test("isRefusal: a 409 status or an HTTP 409 message, and nothing else", () => {
+  assert.equal(isRefusal(Object.assign(new Error("conflict"), { status: 409 })), true);
+  assert.equal(isRefusal(new Error("BbHttpError: HTTP 409: Thread is already active")), true);
+  assert.equal(isRefusal(new Error("HTTP 500: boom")), false);
+  assert.equal(isRefusal(new Error("already_active")), false);
+  assert.equal(isRefusal("HTTP 4090"), false);
+});
 
 test("threads.send throws: unknown, and no second wake", async () => {
   await watching(async (plugin) => {

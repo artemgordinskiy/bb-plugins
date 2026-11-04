@@ -105,6 +105,12 @@ export async function ownerHold(ctx: DeliveryContext, threadId: string): Promise
   return clock.quiet([threadId, ...work.map((row) => row.id)], now(), ctx.config().quietMs) ? null : "quiet time";
 }
 
+/** A 409 from bb, such as "Thread is already active", is a definite refusal: the message never reached the thread. */
+export function isRefusal(error: unknown): boolean {
+  if (typeof error === "object" && error !== null && (error as { status?: unknown }).status === 409) return true;
+  return /\bHTTP 409\b/.test(String(error));
+}
+
 async function send(ctx: DeliveryContext, threadId: string, text: string, reservation: Reservation): Promise<void> {
   const { bb, store } = ctx;
   const { prUrl } = reservation;
@@ -117,6 +123,12 @@ async function send(ctx: DeliveryContext, threadId: string, text: string, reserv
       originPluginId: bb.pluginId,
     });
   } catch (error) {
+    if (isRefusal(error)) {
+      // bb refused the send because the thread had just started a turn, so nothing reached it. The next poll tries again.
+      bb.log.info(`Send for ${prUrl} to ${threadId} was refused (${String(error)}); it will be retried.`);
+      ctx.ledger.rollback(reservation);
+      return;
+    }
     bb.log.warn(`Send failed for ${prUrl} to ${threadId}; counting it as delivered: ${String(error)}`);
     store.setOutcome(prUrl, "unknown");
     return;

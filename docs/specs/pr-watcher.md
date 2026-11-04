@@ -1,9 +1,76 @@
 # PR Watcher: technical spec
 
-Status: v1.5.2, shipped as 0.1.1. The user chose a much simpler v1 after
-reviewing complexity with Claude and Codex. No questions are open.
-[Decisions](#decisions) records the choices and reversals, and
-[History](#history) lists where each draft differs from the one before.
+Status: v2.0, shipped as 0.2.0. [Wake rules (0.2)](#wake-rules-02) replaces
+the trigger, recovery and settings rules of v1.5 where they differ. The user
+chose a much simpler v1 after reviewing complexity with Claude and Codex. No
+questions are open. [Decisions](#decisions) records the choices and
+reversals, and [History](#history) lists where each draft differs from the
+one before.
+
+## Wake rules (0.2)
+
+0.1 woke a coordinator thread and its stack children 48 times in a day
+(bb thread `thr_gwrzvj2uxp`), and 6 wakes had something to act on. Most were
+"CI passed" again after a stack restack gave each PR a new commit, and 43
+went to children that had already been stopped. 0.2 wakes only on changes
+the user can act on. The user still wants a wake when a PR is approved,
+clean and ready to merge.
+
+Modules: `reading.ts` turns a snapshot into the CI verdict, readiness and
+merge-queue state; `ledger.ts` decides the next wake from that and from what
+the thread was told; `ownership.ts` owns claims, moves, releases and
+handoffs; `config.ts` holds every setting.
+
+**CI.** The verdict comes from the newest run of each check, keyed by
+workflow (or app) and name, not from the rollup. A run with no `startedAt`
+is newer than any run that started. A cancelled or stale run that nothing
+replaced fails only when the check is required; when no check on the PR is
+required, every check counts as required. A pending or expected rollup still
+means CI is running.
+
+**Wakes (defaults).** A failure wakes once per commit. A pass wakes only
+after a reported failure, on that commit or a later one. An approval with
+no comment counts toward "Ready to merge" instead of waking. Ready to merge
+means OPEN, approved (`reviewDecision`, or with no review rule an approval in
+`latestOpinionatedReviews` and no change request), CI green, merge state
+`CLEAN`, `HAS_HOOKS` or `UNSTABLE`, and neither queued nor set to
+auto-merge; `UNKNOWN` holds. It wakes once per set of approvals: it wakes
+again only when no current approval was in the set it was told about, so a
+restack or another approval stays quiet and a dismissal and re-approval
+wakes. An approved, green draft wakes once. Leaving the merge queue, or
+auto-merge turning off, without merging wakes.
+
+**Settings.** Every rule above is a setting: `ciPassWakes`
+(`after-failure`, `first-and-after-failure`, `every-commit`),
+`ciFailureWakes` (`every-commit`, `changed-checks`),
+`optionalCheckFailures` (`wake`, `mention`, `ignore`), `approvalWakes`
+(`ready-to-merge`, `every-approval`), `readyToMergeWakes`,
+`draftApprovalWakes`, `mergeQueueWakes`, `feedbackRoles`, `quietSeconds`,
+`activePollSeconds` and `idlePollSeconds`, beside `instructionLine` and
+`botAuthors`. Unknown values fall back to the default and numbers are
+clamped. Settings apply on the next poll through `onChange`.
+
+**Storage.** `reported_keys (pr_url, key, value, at)` replaces
+`reported_shas`. Keys: `ci:<sha>` (`delivered:` or `baselined:` plus the
+verdict), `last` (the last CI verdict the thread was told, with the failing
+check keys), `ready` and `draft` (the approval ids told), `queued` (seen in
+the queue) and `v` (`2` once a watch has its 0.2 baseline). A migration
+copies `reported_shas` and each PR's last delivered verdict. A reservation
+records each changed key's earlier value, so a rollback restores any wake
+the same way. A watch from 0.1 takes its readiness and queue state as its
+baseline on its first poll, so an upgrade fires no burst of ready wakes.
+
+**Ownership.** bb gives plugins no stop event, and a stopped thread reads
+as idle, so a stopped owner is still woken. `pr_watch` with `from` and
+`bb pr-watcher watch <thread> --from <thread>` move every watch of a thread,
+keeping what was told and what is pending; the agent instructions say to do
+that before stopping a child. An agent's move respects a thread the user
+turned off. `bb pr-watcher unwatch [thread] --pr <url>` ends one watch and
+leaves the thread on.
+
+**Delivery.** A send that bb refuses with HTTP 409, such as "Thread is
+already active", is rolled back and retried on the next poll instead of
+counting as delivered.
 
 ## Goal
 
@@ -1089,3 +1156,11 @@ Each draft's full text is in this file's git history.
   plugin's SDK surfaces are declared in both SDK versions.
 - **v1.5.2**: the default `instructionLine` now asks the agent to propose
   fixes and wait for the user, instead of fixing locally on its own.
+- **v2.0**: [Wake rules (0.2)](#wake-rules-02), from the noise in
+  `thr_gwrzvj2uxp` and a Codex review of the proposal (bb thread
+  `thr_m9z4mzpz6m`). The CI verdict comes from the newest run of each check;
+  passes after passes and bare approvals no longer wake; "Ready to merge",
+  "Still a draft" and "Left the merge queue" are new wakes; every rule is a
+  setting that applies without a reload; `--from` and `unwatch --pr`; a 409
+  refusal is retried. The code was split into reading, ledger and
+  ownership modules.
