@@ -190,3 +190,21 @@ test("readPr: approved says whether the PR is approved, apart from CI and merge 
   assert.equal(readPr(snapshot({ ci: running, reviewDecision: "APPROVED", opinions: [approval("r1")] })).approved, true);
   assert.equal(readPr(snapshot({ ci: green, reviewDecision: "CHANGES_REQUESTED", opinions: [approval("r1")] })).approved, false);
 });
+
+test("readPr: a check that isn't required and is still running doesn't block ready to merge", () => {
+  for (const status of ["IN_PROGRESS", "WAITING", "QUEUED"]) {
+    const ci = {
+      rollup: "PENDING" as const,
+      hasNextPage: false,
+      checks: [run("tests", { required: true }), run("deploy preview", { status, conclusion: null, startedAt: null })],
+    };
+    const reading = readPr(snapshot({ ci, reviewDecision: "APPROVED", mergeState: "CLEAN", opinions: [approval("r1")] }));
+    assert.equal(reading.readiness, "ready", status);
+    assert.deepEqual(reading.ci, { kind: "running" }, "CI as a whole still runs");
+  }
+});
+
+test("readPr: a required check still running blocks ready to merge", () => {
+  const ci = { rollup: "PENDING" as const, hasNextPage: false, checks: [run("tests", { required: true, status: "IN_PROGRESS", conclusion: null })] };
+  assert.equal(readPr(snapshot({ ci, reviewDecision: "APPROVED", mergeState: "CLEAN", opinions: [approval("r1")] })).readiness, "not-ready");
+});

@@ -42,7 +42,7 @@ const QUERY = `query ($owner: String!, $repo: String!, $number: Int!) {
               __typename
               ... on CheckRun {
                 name status conclusion detailsUrl startedAt isRequired(pullRequestNumber: $number)
-                checkSuite { app { slug } workflowRun { workflow { name } } }
+                checkSuite { app { slug } workflowRun { workflow { id } } }
               }
               ... on StatusContext { context state targetUrl isRequired(pullRequestNumber: $number) }
             }
@@ -111,7 +111,7 @@ const responseSchema = z.object({
                                 checkSuite: z
                                   .object({
                                     app: z.object({ slug: z.string() }).nullable(),
-                                    workflowRun: z.object({ workflow: z.object({ name: z.string() }) }).nullable(),
+                                    workflowRun: z.object({ workflow: z.object({ id: z.string() }) }).nullable(),
                                   })
                                   .nullable(),
                               }),
@@ -268,7 +268,8 @@ function toSnapshot(response: z.infer<typeof responseSchema>): Snapshot | null {
               url: node.detailsUrl,
               startedAt: node.startedAt,
               required: node.isRequired,
-              workflow: node.checkSuite?.workflowRun?.workflow.name ?? node.checkSuite?.app?.slug ?? null,
+              // The workflow's node id, not its display name: two workflow files can share a name.
+              workflow: node.checkSuite?.workflowRun?.workflow.id ?? node.checkSuite?.app?.slug ?? null,
             }
           : {
               kind: "context",

@@ -40,7 +40,7 @@ move its watches to yourself, and stop it only after the move succeeds:
 - Run `bb pr-watcher watch <your thread id> --from <child thread id>`.
 
 The result is `moved 2 of 2 watches from thr_child to thr_you`, then one line
-per PR. A line with a code such as `watching_off` means that PR didn't move.
+per PR. A line with a code such as `watching_off`, or `owner_changed` (another thread claimed it during the move), means that PR didn't move.
 What the child was told and any held items move too, so nothing is reported
 twice.
 

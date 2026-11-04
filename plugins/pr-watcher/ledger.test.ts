@@ -270,3 +270,8 @@ test("Ledger: a restack that only drops CI or merge state keeps 'ready', so it s
   assert.equal(subject.next(URL, ready(["a"], { readiness: "not-ready", ci: { kind: "running" } }), rules()), null);
   assert.equal(subject.next(URL, ready(["a"], { sha: "restacked" }), rules()), null);
 });
+
+test("decide: after a recovery on a later commit, a force-push back to the failed commit doesn't recover again", () => {
+  const told = keys({ "ci:abc": "delivered:fail", "ci:fix": "delivered:pass", last: last("pass", "fix") });
+  assert.equal(decide(reading(pass, "abc"), told, [], rules()), null);
+});

@@ -106,8 +106,10 @@ function ciWake(reading: PrReading, keys: Map<string, string>, rules: WakeRules)
   const last = parseJson(keys.get("last"), isLastVerdict);
   const failed = ci.failed.map((check) => check.key).sort();
   if (row) {
-    // A commit already reported or baselined wakes again only to say a reported failure now passes.
-    if (row.reason === "delivered" && row.verdict === "fail" && ci.verdict === "pass") {
+    // A commit already reported or baselined wakes again only to say a reported failure now passes, and
+    // only while that failure is the last verdict told: after a force-push back to it, a recovery on a
+    // later commit already said so.
+    if (row.reason === "delivered" && row.verdict === "fail" && ci.verdict === "pass" && last?.verdict !== "pass") {
       const report: CiReport = { kind: "recovered", sha };
       return { report, changes: told(reading, report, []) };
     }

@@ -63,7 +63,7 @@ export type ClaimOutcome =
   | { kind: "watching"; prUrl: string; number: number; ci: CiReading; earlier: number }
   | { kind: "replaced"; prUrl: string; previousThread: string; previousBy: ClaimedBy; pending: number }
   | { kind: "already"; prUrl: string }
-  | { kind: "refused"; code: "invalid_pr" | "not_eligible" | "watching_off" | "no_pull_request" | "pr_closed" }
+  | { kind: "refused"; code: "invalid_pr" | "not_eligible" | "watching_off" | "no_pull_request" | "pr_closed" | "owner_changed" }
   | { kind: "unavailable"; reason: string };
 
 export type MoveOutcome =
@@ -104,9 +104,9 @@ export class Ownership {
   }
 
   /** Makes `threadId` the owner of its checkout's PR, or of `url`. */
-  async claim(threadId: string, claimedBy: ClaimedBy, url: string | undefined): Promise<ClaimOutcome> {
+  async claim(threadId: string, claimedBy: ClaimedBy, url: string | undefined, expectedOwner?: string): Promise<ClaimOutcome> {
     try {
-      return await this.tryClaim(threadId, claimedBy, url);
+      return await this.tryClaim(threadId, claimedBy, url, expectedOwner);
     } catch (error) {
       return { kind: "unavailable", reason: describeError(error) };
     }
@@ -119,7 +119,8 @@ export class Ownership {
     if (!target || !isEligible(target)) return { kind: "refused", code: "not_eligible" };
     const results = [];
     for (const { prUrl } of this.ports.store.forThread(from)) {
-      results.push({ prUrl, outcome: await this.claim(to, claimedBy, prUrl) });
+      // Each move checks, in the PR's queue, that `from` still owns it: another claim can land while earlier moves wait.
+      results.push({ prUrl, outcome: await this.claim(to, claimedBy, prUrl, from) });
     }
     return { kind: "moved", results };
   }
@@ -204,7 +205,7 @@ export class Ownership {
     }
   }
 
-  private async tryClaim(threadId: string, claimedBy: ClaimedBy, url: string | undefined): Promise<ClaimOutcome> {
+  private async tryClaim(threadId: string, claimedBy: ClaimedBy, url: string | undefined, expectedOwner?: string): Promise<ClaimOutcome> {
     const { store } = this.ports;
     const named = url === undefined ? null : parsePrUrl(url);
     if (url !== undefined && !named) return { kind: "refused", code: "invalid_pr" };
@@ -234,6 +235,7 @@ export class Ownership {
     return this.ports.queue(snapshot.url, async (): Promise<ClaimOutcome> => {
       if (claimedBy === "agent" && store.isOff(threadId)) return { kind: "refused", code: "watching_off" };
       const existing = store.binding(snapshot.url);
+      if (expectedOwner !== undefined && existing?.threadId !== expectedOwner) return { kind: "refused", code: "owner_changed" };
       const kind = claimKind(existing?.threadId ?? null, threadId);
       if (kind === "same") return { kind: "already", prUrl: snapshot.url };
       if (kind === "transfer" && existing) return this.transfer(existing, owner, snapshot);

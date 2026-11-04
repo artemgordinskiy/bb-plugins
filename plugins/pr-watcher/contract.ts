@@ -40,7 +40,7 @@ const checkSchema = z.object({
   startedAt: z.string().nullable().default(null),
   /** Required by the base branch's rules for this pull request. */
   required: z.boolean().default(false),
-  /** The workflow or app that ran the check, so two workflows' jobs with one name stay apart. */
+  /** The workflow's id, or the app, that ran the check, so two workflows' jobs with one name stay apart. */
   workflow: z.string().nullable().default(null),
 });
 

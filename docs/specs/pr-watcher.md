@@ -21,8 +21,8 @@ merge-queue state; `ledger.ts` decides the next wake from that and from what
 the thread was told; `ownership.ts` owns claims, moves, releases and
 handoffs; `config.ts` holds every setting.
 
-**CI.** The verdict comes from the newest run of each check, keyed by
-workflow (or app) and name, not from the rollup. A run with no `startedAt`
+**CI.** The verdict comes from the newest run of each check, keyed by the
+workflow's node id (or the app) and the check name, not from the rollup. A run with no `startedAt`
 is newer than any run that started. A cancelled or stale run that nothing
 replaced fails only when the check is required; when no check on the PR is
 required, every check counts as required. A pending or expected rollup still
@@ -34,7 +34,9 @@ no comment counts toward "Ready to merge" instead of waking. Ready to merge
 means OPEN, approved (`reviewDecision`, or with no review rule an approval in
 `latestOpinionatedReviews` and no change request), CI green, merge state
 `CLEAN`, `HAS_HOOKS` or `UNSTABLE`, and neither queued nor set to
-auto-merge; `UNKNOWN` holds. Only required checks gate it, so a red check that isn't required never blocks
+auto-merge; `UNKNOWN` holds. Only required checks gate it (every check when
+none is required): a check that isn't required, red or still running, never
+blocks it. Only required checks gate it, so a red check that isn't required never blocks
 it. It wakes once per set of approvals: it wakes again only when no current
 approval was in the set it was told about, and the set is forgotten once the
 PR stops being approved. A restack or another approval stays quiet; a change

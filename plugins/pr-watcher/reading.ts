@@ -97,12 +97,22 @@ function isApproved(snapshot: Snapshot, approvalIds: string[]): boolean {
   return snapshot.reviewDecision === "APPROVED" || (snapshot.reviewDecision === null && approvalIds.length > 0 && !changesRequested);
 }
 
+/**
+ * Whether the checks that gate a merge have passed: the required ones, or every check when none is
+ * required. A check that isn't required, red or still running (a deployment waiting for approval,
+ * say), never blocks "Ready to merge", whatever the setting says about waking for it.
+ */
+function gatePasses(ci: Snapshot["ci"]): boolean {
+  if (ci.hasNextPage) return false;
+  const anyRequired = ci.checks.some((check) => check.required);
+  const gating = latestChecks(ci.checks)
+    .filter((check) => !anyRequired || check.required)
+    .map((check) => ({ ...check, required: true }));
+  return !gating.some(isUnfinished) && !gating.some(isFailed);
+}
+
 function readiness(snapshot: Snapshot, approved: boolean): Readiness {
-  // Only required checks gate a merge, so a red check that isn't required never blocks "Ready to merge",
-  // whatever the setting says about waking for it.
-  const gate = readCi(snapshot.ci, "ignore");
-  const ciOk = gate.kind === "none" || (gate.kind === "settled" && gate.verdict === "pass");
-  if (!approved || !ciOk) return "not-ready";
+  if (!approved || !gatePasses(snapshot.ci)) return "not-ready";
   if (snapshot.isDraft) return "draft-approved";
   if (snapshot.mergeState === "UNKNOWN") return "unknown";
   return MERGEABLE_STATES.has(snapshot.mergeState) ? "ready" : "not-ready";
