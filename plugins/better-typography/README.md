@@ -13,7 +13,7 @@ Fonts and sizes for bb, in three areas:
 Defaults are set for reading. The interface is set in Atkinson Hyperlegible
 Next at a 15px base size. Code everywhere, the terminal included, moves to
 JetBrains Mono with ligatures on, with bb's Nerd Font stack behind it for
-icons. Chat is set in Literata at 17px with a 1.65 line height, with your
+icons; the terminal draws it at 13.3px in 8px cells. Chat is set in Literata at 17px with a 1.65 line height, with your
 messages and the message box at 16px. Code in chat is 84% of the surrounding
 text. Dark mode uses a slightly lighter weight, and paragraph gaps are wider.
 Replies are a softer #dedede in dark mode; every other color follows the theme
@@ -35,7 +35,7 @@ switch turns every rule off without losing settings.
 | --- | --- |
 | Chat | on/off, presets, and tabs for Replies, Your messages, Headings, Code and Spacing |
 | Interface | font; base size (11–17px), which scales bb's whole text scale |
-| Code | code font, terminal font ("same as code font" or bb's own), ligatures |
+| Code | code font, terminal font ("same as code font" or bb's own), terminal size (whole-pixel cells, bundled fonts only), ligatures |
 
 The chat tabs hold these controls:
 
@@ -108,6 +108,12 @@ bundled fonts, and rules generated from the saved config
   - The terminal measures its font when it opens, so a new terminal font
     shows in terminals opened afterwards. A bundled terminal font is loaded
     up front for that reason.
+  - bb's terminal (xterm.js) asks for 12px text and rounds each cell's width
+    down to whole device pixels, so JetBrains Mono's 7.2px glyphs overlapped
+    7px cells. A bundled terminal font is drawn through an alias face
+    (`"JetBrains Mono Terminal"`) whose `size-adjust` makes each glyph a
+    hundredth of a pixel over a whole cell (8px by default), which xterm
+    rounds to an exact fit at any pixel ratio. Device fonts keep bb's 12px.
 - **Chat** rules target bb's markdown root `[data-markdown-preview]` inside a
   chat message's `[data-message-column]`. Replies are the column with the
   `group/message` class; your messages are the one without.

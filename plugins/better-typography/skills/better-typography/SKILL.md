@@ -32,7 +32,10 @@ them to the settings page.
   size (11–17px, default 15px). The base size scales all of bb's `--text-*`
   tokens; spacing is unchanged.
 - **Code** has a code font (default JetBrains Mono), a terminal font (default
-  "same as code font"; or bb's Nerd Font stack), and ligatures (default on).
+  "same as code font"; or bb's Nerd Font stack), a terminal size, and
+  ligatures (default on). Terminal size steps through whole-pixel cells
+  (default 8px, 13.3px JetBrains Mono) and works only with a bundled terminal
+  font, through a `size-adjust` alias face; device fonts keep bb's 12px.
 - Reply text defaults to #dedede in dark mode; other colors follow the theme.
 - The top **Better Typography** switch turns every rule off without losing settings.
 

@@ -15,6 +15,7 @@ import {
   PRESETS,
   fontStack,
   resolveFont,
+  terminalFace,
   themeBaseSize,
   type ChatConfig,
   type DerivedFontChoice,
@@ -455,6 +456,7 @@ function CodeSection({
 }) {
   const code = config.code;
   const { codeFamily } = aliases(config, theme);
+  const terminal = terminalFace(config);
   return (
     <div className="space-y-6">
       <SectionHeader
@@ -480,6 +482,23 @@ function CodeSection({
               theme={{ label: "Theme font", detail: "bb's Nerd Font stack", family: theme.fontTerminal }}
               onChange={(terminal: DerivedFontChoice) => onChange({ ...code, terminal })}
             />
+            <div className={dimmed(terminal === null)}>
+              <SliderField
+                label="Terminal size"
+                value={code.terminalCell}
+                defaultValue={DEFAULT_CONFIG.code.terminalCell}
+                limits={LIMITS.terminalCell}
+                format={(cell) =>
+                  terminal === null ? "12px" : `${(cell / (terminal.font.advance ?? 0.6)).toFixed(1)}px`
+                }
+                onChange={(terminalCell) => onChange({ ...code, terminalCell })}
+                hint={
+                  terminal === null
+                    ? "Needs a bundled terminal font; bb draws others at 12px."
+                    : `Steps of whole-pixel cells (${code.terminalCell}px wide), so letters never overlap.`
+                }
+              />
+            </div>
             <SwitchField
               label="Ligatures"
               description={

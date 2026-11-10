@@ -1,7 +1,7 @@
 // The typography model: the stored config, its defaults and presets, parsing
 // of untrusted stored values, and the stylesheet a config produces. Pure, so
 // the content script, the settings page, and the tests share one definition.
-import { BUNDLED_FONTS, bundledFont, GENERIC_FAMILY, type BundledFontId } from "./fonts.ts";
+import { BUNDLED_FONTS, bundledFont, GENERIC_FAMILY, type BundledFont, type BundledFontId } from "./fonts.ts";
 
 export type FontChoice =
   | { kind: "theme" }
@@ -78,6 +78,8 @@ export interface TypographyConfig {
     ligatures: boolean;
     /** "same" follows the code font, keeping bb's Nerd Font glyph fallbacks. */
     terminal: DerivedFontChoice;
+    /** The terminal's cell width in whole px, for a bundled terminal font. */
+    terminalCell: number;
   };
   chat: ChatConfig;
 }
@@ -94,6 +96,7 @@ export const LIMITS = {
   codeLineHeight: { min: 1.2, max: 2, step: 0.05 },
   paragraphSpacing: { min: 0.25, max: 1.5, step: 0.05 },
   darkWeightOffset: { min: -60, max: 20, step: 5 },
+  terminalCell: { min: 6, max: 10, step: 1 },
 } as const;
 
 const THEME_COLOR: ColorChoice = { light: null, dark: null };
@@ -112,7 +115,7 @@ const THEME_COLOR: ColorChoice = { light: null, dark: null };
 export const DEFAULT_CONFIG: TypographyConfig = {
   enabled: true,
   interface: { font: { kind: "bundled", id: "atkinson-hyperlegible-next" }, size: 15 },
-  code: { font: { kind: "bundled", id: "jetbrains-mono" }, ligatures: true, terminal: { kind: "same" } },
+  code: { font: { kind: "bundled", id: "jetbrains-mono" }, ligatures: true, terminal: { kind: "same" }, terminalCell: 8 },
   chat: {
     enabled: true,
     replies: {
@@ -374,6 +377,7 @@ export function parseConfig(value: unknown): TypographyConfig {
       font: parseFont(code.font, d.code.font),
       ligatures: bool(code.ligatures, d.code.ligatures),
       terminal: parseDerivedFont(code.terminal, d.code.terminal),
+      terminalCell: Math.round(clamp(code.terminalCell, LIMITS.terminalCell, d.code.terminalCell)),
     },
     chat: parseChat(input.chat),
   };
@@ -485,6 +489,37 @@ export function resolveFont(choice: DerivedFontChoice, parent: FontChoice): Font
   return choice.kind === "same" ? parent : choice;
 }
 
+/** The px size bb's terminal asks for; it is not configurable in bb. */
+export const BB_TERMINAL_SIZE = 12;
+
+export interface TerminalFace {
+  font: BundledFont;
+  /** The alias family the terminal draws with. */
+  family: string;
+  /** The text size the alias renders at, in px. */
+  size: number;
+  /** `size-adjust` that turns bb's 12px into that size, in percent. */
+  sizeAdjust: number;
+}
+
+/**
+ * bb's terminal (xterm.js) asks for 12px text and rounds each cell's width
+ * down to whole device pixels. JetBrains Mono at 12px is 7.2px wide, so every
+ * glyph overflowed its 7px cell and crowded its neighbours. A bundled terminal
+ * font is drawn instead through an alias face whose `size-adjust` makes each
+ * glyph exactly one whole-pixel cell wide; a hundredth of a pixel over keeps
+ * float error from rounding the cell down. The row height follows the font's
+ * own ascent and descent at that size.
+ */
+export function terminalFace(config: TypographyConfig): TerminalFace | null {
+  if (!config.enabled) return null;
+  const choice = resolveFont(config.code.terminal, config.code.font);
+  const font = choice.kind === "bundled" ? bundledFont(choice.id) : undefined;
+  if (font?.advance === undefined) return null;
+  const size = (config.code.terminalCell + 0.01) / font.advance;
+  return { font, family: `${font.family} Terminal`, size, sizeAdjust: (size / BB_TERMINAL_SIZE) * 100 };
+}
+
 function num(value: number, digits = 4): string {
   return Number(value.toFixed(digits)).toString();
 }
@@ -516,7 +551,7 @@ function rootRules(config: TypographyConfig, theme: ThemeTokens): string[] {
   declarations["--font-mono"] = codeStack;
   // Diffs and the source viewer draw in shadow DOM from their own variable.
   declarations["--diffs-font-family"] = codeStack;
-  const terminalFamily = primaryFamily(resolveFont(code.terminal, code.font));
+  const terminalFamily = terminalFace(config)?.family ?? primaryFamily(resolveFont(code.terminal, code.font));
   // Keep bb's stack behind the choice so Nerd Font glyphs still render.
   declarations["--font-terminal"] = terminalFamily === null ? null : `"${terminalFamily}", ${theme.fontTerminal}`;
   if (!code.ligatures) declarations["--diffs-font-features"] = '"liga" 0, "calt" 0';
@@ -663,15 +698,23 @@ export function buildStylesheet(config: TypographyConfig, theme: ThemeTokens = B
 export function buildFontFaces(
   faces: readonly { font: string; style: string; file: string; unicodeRange: string }[],
   baseUrl: string,
+  terminal: TerminalFace | null = null,
 ): string {
-  return faces
-    .map((face) => {
-      const font = bundledFont(face.font);
-      if (font === undefined) return "";
-      return `@font-face{font-family:"${font.family}";font-style:${face.style};font-weight:${font.weights.min} ${font.weights.max};font-display:swap;src:url("${baseUrl}?file=${face.file}") format("woff2");unicode-range:${face.unicodeRange}}`;
-    })
-    .filter((text) => text !== "")
-    .join("\n");
+  const declare = (family: string, face: (typeof faces)[number], font: BundledFont, extra = "") =>
+    `@font-face{font-family:"${family}";font-style:${face.style};font-weight:${font.weights.min} ${font.weights.max};font-display:swap;src:url("${baseUrl}?file=${face.file}") format("woff2");unicode-range:${face.unicodeRange}${extra}}`;
+  const rules: string[] = [];
+  for (const face of faces) {
+    const font = bundledFont(face.font);
+    if (font === undefined) continue;
+    rules.push(declare(font.family, face, font));
+  }
+  if (terminal !== null) {
+    for (const face of faces) {
+      if (face.font !== terminal.font.id) continue;
+      rules.push(declare(terminal.family, face, terminal.font, `;size-adjust:${num(terminal.sizeAdjust)}%`));
+    }
+  }
+  return rules.join("\n");
 }
 
 export function fontLabel(choice: DerivedFontChoice, labels: { same?: string; theme?: string } = {}): string {

@@ -9,6 +9,7 @@ import {
   buildStylesheet,
   parseConfig,
   sanitizeFamily,
+  terminalFace,
   type TypographyConfig,
 } from "./typography.ts";
 
@@ -31,7 +32,7 @@ test("a saved config round-trips", () => {
   const config: TypographyConfig = {
     ...DEFAULT_CONFIG,
     interface: { font: { kind: "bundled", id: "atkinson-hyperlegible-next" }, size: 14.5 },
-    code: { font: { kind: "device", family: "Berkeley Mono" }, ligatures: true, terminal: { kind: "same" } },
+    code: { font: { kind: "device", family: "Berkeley Mono" }, ligatures: true, terminal: { kind: "same" }, terminalCell: 9 },
     chat: {
       ...DEFAULT_CONFIG.chat,
       replies: { ...DEFAULT_CONFIG.chat.replies, font: { kind: "device", family: "Bookerly" }, size: 18.5 },
@@ -84,8 +85,8 @@ test("the defaults set the interface in Atkinson at 15px and code everywhere in 
   assert.ok(root.includes('--diffs-font-family:"JetBrains Mono", ui-monospace'));
   // Ligatures are on, so nothing turns them off.
   assert.ok(!root.includes("--diffs-font-features"));
-  // The terminal follows the code font, with bb's Nerd Font stack behind it.
-  assert.ok(root.includes(`--font-terminal:"JetBrains Mono", ${BB_THEME.fontTerminal}`));
+  // The terminal follows the code font through its cell-sized alias, with bb's Nerd Font stack behind it.
+  assert.ok(root.includes(`--font-terminal:"JetBrains Mono Terminal", ${BB_THEME.fontTerminal}`));
 });
 
 test("overrides fall back to the theme's literal stacks, never to themselves", () => {
@@ -97,7 +98,27 @@ test("overrides fall back to the theme's literal stacks, never to themselves", (
   const root = rootRule(css);
   assert.ok(!/--font-(sans|mono|terminal):[^;]*var\(--font-/.test(root));
   assert.ok(root.includes(`--font-sans:"SF Pro Text", ${BB_THEME.fontSans}`));
-  assert.ok(root.includes(`--font-terminal:"JetBrains Mono", ${BB_THEME.fontTerminal}`));
+  assert.ok(root.includes(`--font-terminal:"JetBrains Mono Terminal", ${BB_THEME.fontTerminal}`));
+});
+
+test("a bundled terminal font fills whole-pixel cells exactly", () => {
+  const face = terminalFace(DEFAULT_CONFIG);
+  assert.ok(face);
+  // 8px cells: 13.35px JetBrains Mono is 8.01px wide, which xterm floors to 8 at any pixel ratio.
+  assert.ok(Math.abs(face.size * 0.6 - 8.01) < 1e-9);
+  for (const ratio of [1, 2, 3]) assert.equal(Math.floor(face.size * 0.6 * ratio), 8 * ratio);
+  const faces = [
+    { font: "jetbrains-mono", style: "normal", file: "jb.woff2", unicodeRange: "U+0000-00FF" },
+    { font: "literata", style: "normal", file: "lit.woff2", unicodeRange: "U+0000-00FF" },
+  ];
+  const css = buildFontFaces(faces, "/fonts", face).split("\n");
+  assert.equal(css.length, 3);
+  assert.match(css[2] ?? "", /^@font-face\{font-family:"JetBrains Mono Terminal";.*file=jb\.woff2.*;size-adjust:111\.25%\}$/);
+  // A device or theme terminal font keeps bb's 12px and its own name.
+  const device = { ...DEFAULT_CONFIG, code: { ...DEFAULT_CONFIG.code, terminal: { kind: "device", family: "Menlo" } } } as const;
+  assert.equal(terminalFace(device), null);
+  assert.ok(rootRule(buildStylesheet(device)).includes('--font-terminal:"Menlo", '));
+  assert.equal(parseConfig({ code: { terminalCell: 8.6 } }).code.terminalCell, 9);
 });
 
 test("an interface size scales the theme's whole text scale", () => {

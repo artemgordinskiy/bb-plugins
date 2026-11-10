@@ -12,6 +12,8 @@ export interface BundledFont {
   category: FontCategory;
   note: string;
   weights: { min: number; max: number };
+  /** A monospace font's advance width, in em, which sizes terminal cells. */
+  advance?: number;
   /** Whether the font has an `opsz` axis that `font-optical-sizing` drives. */
   opticalSizing: boolean;
 }
@@ -51,6 +53,7 @@ export const BUNDLED_FONTS = [
     category: "mono",
     note: "Tall-x-height monospace for code",
     weights: { min: 100, max: 800 },
+    advance: 0.6,
     opticalSizing: false,
   },
 ] as const satisfies readonly BundledFont[];
