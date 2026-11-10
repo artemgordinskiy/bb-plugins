@@ -15,7 +15,7 @@ Its plugins then appear in Settings → Plugins under **Artem's plugins**.
 | Plugin | What it does |
 | --- | --- |
 | [Server Switcher](plugins/server-switcher) | Lists your self-hosted bb servers in the sidebar footer and switches between them, without a bb account. |
-| [Better Typography](plugins/typography) | Fonts and sizes for chat messages, the interface and code, with bundled open fonts or any font on your device. |
+| [Better Typography](plugins/better-typography) | Fonts and sizes for chat messages, the interface and code, with bundled open fonts or any font on your device. |
 | [Telegram Notify](plugins/telegram-notify) | Gives agents a tool that sends you a Telegram message with a link back to the thread, with per-thread and hourly limits. |
 | [PR Watcher](plugins/pr-watcher) | Wakes the thread that owns a pull request when CI fails or recovers, reviewers comment, or it is ready to merge. |
 

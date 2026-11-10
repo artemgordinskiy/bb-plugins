@@ -1,4 +1,4 @@
-// bb-plugin-typography frontend.
+// bb-plugin-better-typography frontend.
 //
 // - A content script declares the bundled fonts and keeps one stylesheet in
 //   sync with this device's saved config and the current theme: interface
@@ -13,7 +13,7 @@ import { loadConfig, subscribeConfig } from "./store";
 import { observeTheme, readThemeTokens } from "./theme";
 import { buildFontFaces, buildStylesheet, resolveFont, type TypographyConfig } from "./typography";
 
-const FONT_URL = "/api/v1/plugins/typography/http/font";
+const FONT_URL = "/api/v1/plugins/better-typography/http/font";
 
 /**
  * The terminal measures its font once when it opens, so a bundled terminal
@@ -59,11 +59,11 @@ function mountTypography(signal: AbortSignal): () => void {
 
 export default definePluginApp((app) => {
   app.contentScripts.register({
-    id: "typography",
+    id: "better-typography",
     mount: ({ signal }) => mountTypography(signal),
   });
   app.slots.settingsSection({
-    id: "typography",
+    id: "better-typography",
     component: SettingsPage,
   });
 });

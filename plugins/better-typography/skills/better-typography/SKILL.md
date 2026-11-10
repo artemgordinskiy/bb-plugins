@@ -1,6 +1,6 @@
 ---
-name: typography
-description: Explain or troubleshoot the Better Typography plugin (id `typography`), which sets bb's chat reading typography, interface font and size, and the code and terminal fonts, with bundled or device fonts.
+name: better-typography
+description: Explain or troubleshoot the Better Typography plugin (id `better-typography`), which sets bb's chat reading typography, interface font and size, and the code and terminal fonts, with bundled or device fonts.
 ---
 
 # Better Typography
@@ -19,7 +19,8 @@ Sets fonts and sizes in three areas:
 
 Settings → Plugins → Better Typography, with a live preview per area. There is no CLI
 and no server-side setting. The config lives in the viewing browser's
-localStorage under `bb-plugin-typography:config:v1`, so each device (and each
+localStorage under `bb-plugin-typography:config:v1` (the key predates the
+rename and is kept so settings carry over), so each device (and each
 bb server origin) has its own. An agent cannot change it for the user; point
 them to the settings page.
 
@@ -36,7 +37,7 @@ them to the settings page.
 ## Fonts
 
 Bundled: Literata, Source Serif 4, Atkinson Hyperlegible Next, JetBrains Mono
-(OFL), served from `/api/v1/plugins/typography/http/font?file=<name>`.
+(OFL), served from `/api/v1/plugins/better-typography/http/font?file=<name>`.
 
 Device fonts (e.g. Bookerly) are used by name and only render on devices that
 have them installed. Listing them needs the Local Font Access API (Chromium,

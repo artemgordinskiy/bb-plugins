@@ -17,6 +17,12 @@ terminal keeps bb's Nerd Font stack. Chat is set in Literata at 17px with a
 surrounding text. Dark mode uses a slightly lighter weight, and paragraph
 gaps are wider. Colors follow the theme until you pick your own.
 
+## Upgrading from `typography`
+
+Before 0.2.0 the plugin's id was `typography`, which BB Community's own
+Typography plugin also uses. Remove the old plugin and install
+`better-typography`; settings saved in each browser carry over.
+
 ## Settings
 
 Settings → Plugins → Better Typography. Changes apply to the whole app at once, with
@@ -58,7 +64,7 @@ All the included fonts are SIL Open Font License 1.1 variable fonts
 
 They ship as per-script woff2 subsets (Latin, Latin Extended, Cyrillic,
 Cyrillic Extended, and Greek where the font has them). The plugin's own
-backend serves them at `/api/v1/plugins/typography/http/font`. A browser
+backend serves them at `/api/v1/plugins/better-typography/http/font`. A browser
 downloads only the subsets the text on screen uses, and no requests leave the
 bb server.
 

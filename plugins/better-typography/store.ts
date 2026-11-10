@@ -4,6 +4,8 @@
 import { useEffect, useState } from "react";
 import { DEFAULT_CONFIG, parseConfig, sanitizeFamily, type TypographyConfig } from "./typography";
 
+// The keys predate the rename from the `typography` id. They stay as they are
+// so settings saved before the rename carry over to `better-typography`.
 const CONFIG_KEY = "bb-plugin-typography:config:v1";
 const DEVICE_FONTS_KEY = "bb-plugin-typography:device-fonts:v1";
 const CHANGE_EVENT = "bb-plugin-typography:change";
