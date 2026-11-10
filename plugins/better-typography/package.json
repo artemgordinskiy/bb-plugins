@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-better-typography",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Better Typography for bb: chat reading text, the interface and code fonts, with bundled and device fonts.",
   "license": "MIT",
   "type": "module",

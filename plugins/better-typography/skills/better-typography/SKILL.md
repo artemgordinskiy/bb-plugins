@@ -28,10 +28,12 @@ them to the settings page.
   17px, line height 1.65; also Editorial, Hyperlegible, Interface font), and
   tabs for Replies, Your messages, Headings, Code and Spacing. The **Message
   box** switch under Your messages returns the composer to the interface font.
-- **Interface** has a font and a base size (11–17px). The base size scales
-  all of bb's `--text-*` tokens; spacing is unchanged.
-- **Code** has a code font (default JetBrains Mono), a terminal font (default:
-  bb's Nerd Font stack; or "same as code font"), and ligatures (default off).
+- **Interface** has a font (default Atkinson Hyperlegible Next) and a base
+  size (11–17px, default 15px). The base size scales all of bb's `--text-*`
+  tokens; spacing is unchanged.
+- **Code** has a code font (default JetBrains Mono), a terminal font (default
+  "same as code font"; or bb's Nerd Font stack), and ligatures (default on).
+- Reply text defaults to #dedede in dark mode; other colors follow the theme.
 - The top **Better Typography** switch turns every rule off without losing settings.
 
 ## Fonts

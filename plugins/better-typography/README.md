@@ -10,12 +10,14 @@ Fonts and sizes for bb, in three areas:
 - **Code** — one monospace font for code blocks, file views, diffs and the
   terminal.
 
-Defaults change only what helps reading. The interface keeps the theme's face
-and scale. Code everywhere moves to JetBrains Mono with ligatures off, and the
-terminal keeps bb's Nerd Font stack. Chat is set in Literata at 17px with a
-1.65 line height, with your messages and the message box at 16px. Code in chat is 84% of the
-surrounding text. Dark mode uses a slightly lighter weight, and paragraph
-gaps are wider. Colors follow the theme until you pick your own.
+Defaults are set for reading. The interface is set in Atkinson Hyperlegible
+Next at a 15px base size. Code everywhere, the terminal included, moves to
+JetBrains Mono with ligatures on, with bb's Nerd Font stack behind it for
+icons. Chat is set in Literata at 17px with a 1.65 line height, with your
+messages and the message box at 16px. Code in chat is 84% of the surrounding
+text. Dark mode uses a slightly lighter weight, and paragraph gaps are wider.
+Replies are a softer #dedede in dark mode; every other color follows the theme
+until you pick your own.
 
 ## Upgrading from `typography`
 

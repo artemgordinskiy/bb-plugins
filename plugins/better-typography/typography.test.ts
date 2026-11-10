@@ -41,6 +41,16 @@ test("a saved config round-trips", () => {
   assert.deepEqual(parseConfig(JSON.parse(JSON.stringify(config))), config);
 });
 
+test("a saved null keeps the theme's value even where the default sets one", () => {
+  const config = parseConfig({
+    interface: { size: null },
+    chat: { replies: { color: { light: null, dark: null } } },
+  });
+  assert.equal(config.interface.size, null);
+  assert.deepEqual(config.chat.replies.color, { light: null, dark: null });
+  assert.equal(parseConfig({ chat: { replies: { color: { dark: "teal" } } } }).chat.replies.color.dark, "#dedede");
+});
+
 test("numbers are clamped and bad fields fall back individually", () => {
   const config = parseConfig({
     interface: { size: 40 },
@@ -66,15 +76,16 @@ test("device font names cannot break out of the CSS string", () => {
   assert.ok(rootRule(css).startsWith('--font-sans:"X*color:red", "Inter Variable"'));
 });
 
-test("the defaults keep the interface and move code to JetBrains Mono", () => {
+test("the defaults set the interface in Atkinson at 15px and code everywhere in JetBrains Mono", () => {
   const root = rootRule(buildStylesheet(DEFAULT_CONFIG));
-  assert.ok(!root.includes("--font-sans"));
-  assert.ok(!root.includes("--text-"));
+  assert.ok(root.includes('--font-sans:"Atkinson Hyperlegible Next", ui-sans-serif, system-ui, sans-serif;'));
+  assert.ok(root.includes("--text-sm:15px"));
   assert.ok(root.includes('--font-mono:"JetBrains Mono", ui-monospace'));
   assert.ok(root.includes('--diffs-font-family:"JetBrains Mono", ui-monospace'));
-  assert.ok(root.includes('--diffs-font-features:"liga" 0, "calt" 0'));
-  // The terminal keeps bb's Nerd Font stack unless asked to follow the code font.
-  assert.ok(!root.includes("--font-terminal"));
+  // Ligatures are on, so nothing turns them off.
+  assert.ok(!root.includes("--diffs-font-features"));
+  // The terminal follows the code font, with bb's Nerd Font stack behind it.
+  assert.ok(root.includes(`--font-terminal:"JetBrains Mono", ${BB_THEME.fontTerminal}`));
 });
 
 test("overrides fall back to the theme's literal stacks, never to themselves", () => {
@@ -99,10 +110,10 @@ test("an interface size scales the theme's whole text scale", () => {
   assert.ok(!root.includes("--text-base"));
 });
 
-test("ligatures stay on when chosen", () => {
-  const css = buildStylesheet({ ...DEFAULT_CONFIG, code: { ...DEFAULT_CONFIG.code, ligatures: true } });
-  assert.ok(!css.includes("--diffs-font-features"));
-  assert.ok(!css.includes("font-variant-ligatures"));
+test("ligatures can be switched off everywhere", () => {
+  const css = buildStylesheet({ ...DEFAULT_CONFIG, code: { ...DEFAULT_CONFIG.code, ligatures: false } });
+  assert.ok(rootRule(css).includes('--diffs-font-features:"liga" 0, "calt" 0'));
+  assert.ok(css.includes("font-variant-ligatures:none"));
 });
 
 test("the default chat stylesheet styles replies and your messages", () => {
@@ -114,8 +125,9 @@ test("the default chat stylesheet styles replies and your messages", () => {
   assert.match(css, /html\.dark :is\(\[data-message-column\]\.group\\\/message[^{]*\{font-weight:380\}/);
   // Chat code follows the app's code font by default.
   assert.match(css, /\[data-markdown-preview\] :is\(code, kbd, samp\)\{font-family:"JetBrains Mono", ui-monospace[^;]*!important/);
-  // Theme colors stay untouched until a color is chosen.
-  assert.ok(!css.includes("--foreground"));
+  // Replies are a softer white in dark mode; light mode keeps the theme's color.
+  assert.ok(css.includes(`html.dark ${SCOPES.replies}{--foreground:#dedede}`));
+  assert.ok(!css.includes("html:not(.dark)"));
 });
 
 test("the message box takes your messages' type unless switched off", () => {

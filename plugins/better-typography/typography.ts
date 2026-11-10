@@ -99,19 +99,20 @@ export const LIMITS = {
 const THEME_COLOR: ColorChoice = { light: null, dark: null };
 
 /**
- * The interface keeps the theme's own face and scale, so installing the
- * plugin does not rearrange bb. Code everywhere moves to JetBrains Mono (the
- * terminal keeps bb's Nerd Font stack). Chat gets a book-like reading setup:
- * Literata at 17px with a 1.65 line height (about 28px), your messages one
- * pixel smaller and the message box set to match them, a slightly lighter
- * weight in dark mode, code a notch
- * smaller than the text around it, and paragraph gaps sized for the larger
- * text.
+ * The interface moves to Atkinson Hyperlegible Next with a 15px base, which
+ * scales bb's whole text scale up from the theme's 13px. Code everywhere,
+ * the terminal included, moves to JetBrains Mono with ligatures on (the
+ * terminal keeps bb's Nerd Font stack behind it). Chat gets a book-like
+ * reading setup: Literata at 17px with a 1.65 line height (about 28px), your
+ * messages one pixel smaller and the message box set to match them, a
+ * slightly lighter weight and softer #dedede reply text in dark mode, code a
+ * notch smaller than the text around it, and paragraph gaps sized for the
+ * larger text.
  */
 export const DEFAULT_CONFIG: TypographyConfig = {
   enabled: true,
-  interface: { font: { kind: "theme" }, size: null },
-  code: { font: { kind: "bundled", id: "jetbrains-mono" }, ligatures: false, terminal: { kind: "theme" } },
+  interface: { font: { kind: "bundled", id: "atkinson-hyperlegible-next" }, size: 15 },
+  code: { font: { kind: "bundled", id: "jetbrains-mono" }, ligatures: true, terminal: { kind: "same" } },
   chat: {
     enabled: true,
     replies: {
@@ -120,7 +121,7 @@ export const DEFAULT_CONFIG: TypographyConfig = {
       lineHeight: 1.65,
       weight: 400,
       letterSpacing: 0,
-      color: THEME_COLOR,
+      color: { light: null, dark: "#dedede" },
     },
     messages: {
       font: { kind: "same" },
@@ -270,13 +271,15 @@ export function sanitizeFamily(value: string): string {
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
-function parseColor(value: unknown): string | null {
-  return typeof value === "string" && HEX_COLOR.test(value) ? value.toLowerCase() : null;
+/** A stored null is a deliberate "theme color"; anything else unreadable keeps the default. */
+function parseColor(value: unknown, fallback: string | null): string | null {
+  if (value === null) return null;
+  return typeof value === "string" && HEX_COLOR.test(value) ? value.toLowerCase() : fallback;
 }
 
-function parseColorChoice(value: unknown): ColorChoice {
+function parseColorChoice(value: unknown, fallback: ColorChoice): ColorChoice {
   const input = record(value);
-  return { light: parseColor(input.light), dark: parseColor(input.dark) };
+  return { light: parseColor(input.light, fallback.light), dark: parseColor(input.dark, fallback.dark) };
 }
 
 function parseFont(value: unknown, fallback: FontChoice): FontChoice {
@@ -308,7 +311,7 @@ function parseProse(value: unknown, fallback: ProseStyle): ProseStyle {
     lineHeight: clamp(input.lineHeight, LIMITS.lineHeight, fallback.lineHeight),
     weight: clamp(input.weight, LIMITS.weight, fallback.weight),
     letterSpacing: clamp(input.letterSpacing, LIMITS.letterSpacing, fallback.letterSpacing),
-    color: parseColorChoice(input.color),
+    color: parseColorChoice(input.color, fallback.color),
   };
 }
 
@@ -333,7 +336,7 @@ function parseChat(value: unknown): ChatConfig {
       weight: clamp(headings.weight, LIMITS.headingWeight, d.headings.weight),
       scale: clamp(headings.scale, LIMITS.headingScale, d.headings.scale),
       letterSpacing: clamp(headings.letterSpacing, LIMITS.letterSpacing, d.headings.letterSpacing),
-      color: parseColorChoice(headings.color),
+      color: parseColorChoice(headings.color, d.headings.color),
     },
     code: {
       font: parseDerivedFont(code.font, d.code.font),
@@ -359,7 +362,13 @@ export function parseConfig(value: unknown): TypographyConfig {
     enabled: bool(input.enabled, d.enabled),
     interface: {
       font: parseFont(ui.font, d.interface.font),
-      size: typeof ui.size === "number" ? clamp(ui.size, LIMITS.interfaceSize, 13) : null,
+      // A stored null keeps the theme's scale; a missing or unreadable size takes the default.
+      size:
+        ui.size === null
+          ? null
+          : typeof ui.size === "number"
+            ? clamp(ui.size, LIMITS.interfaceSize, 13)
+            : d.interface.size,
     },
     code: {
       font: parseFont(code.font, d.code.font),
