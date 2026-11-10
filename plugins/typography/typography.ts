@@ -430,6 +430,11 @@ export function themeBaseSize(theme: ThemeTokens): number {
  * preview marks its samples with `data-typography-sample`. The message box
  * is a ProseMirror editor inside `[data-promptbox-editor-content]`, on the
  * new-thread page and under every thread.
+ *
+ * An expanded "Thought" row is plain text, not markdown, in a bordered,
+ * scrollable div with no data attribute of its own (bb 0.49). Its utility
+ * classes are the only hook, kept inside the thread timeline so nothing else
+ * that happens to share them is restyled.
  */
 export const SCOPES = {
   replies:
@@ -437,6 +442,8 @@ export const SCOPES = {
   messages:
     ':is([data-message-column]:not(.group\\/message), [data-typography-sample="messages"]) [data-markdown-preview]',
   composer: ':is([data-promptbox-editor-content] .ProseMirror, [data-typography-sample="composer"])',
+  thinking:
+    ':is([data-timeline-items] .max-h-80.whitespace-pre-wrap.border-l.leading-relaxed, [data-typography-sample="thinking"])',
 } as const;
 
 /** The font-family value for a choice, or null to keep the theme's. */
@@ -600,6 +607,29 @@ function composerRules(style: ProseStyle, font: FontChoice, rhythm: ChatConfig["
   ];
 }
 
+/**
+ * The assistant's thinking in the replies' type, so it reads as part of the
+ * reply instead of in the interface font. bb sets it at the same size as reply
+ * text, and so does this; it keeps bb's muted color and border, which mark it
+ * as secondary.
+ */
+function thinkingRules(style: ProseStyle, font: FontChoice, rhythm: ChatConfig["rhythm"]): string[] {
+  return [
+    rule(SCOPES.thinking, {
+      "font-family": fontStack(font, "var(--font-sans)"),
+      "font-size": `${num(style.size)}px`,
+      "line-height": num(style.lineHeight),
+      "font-weight": String(style.weight),
+      "letter-spacing": `${num(style.letterSpacing)}em`,
+      "font-optical-sizing": rhythm.opticalSizing ? "auto" : "none",
+      "text-wrap-style": rhythm.textWrap,
+      hyphens: rhythm.hyphens ? "auto" : "manual",
+      "text-rendering": "optimizeLegibility",
+    }),
+    rule(`html.dark ${SCOPES.thinking}`, { "font-weight": darkWeight(style, rhythm) }),
+  ];
+}
+
 /** The stylesheet for a config; empty when the plugin is switched off. */
 export function buildStylesheet(config: TypographyConfig, theme: ThemeTokens = BB_THEME): string {
   if (!config.enabled) return "";
@@ -610,6 +640,7 @@ export function buildStylesheet(config: TypographyConfig, theme: ThemeTokens = B
     ...(chat.enabled
       ? [
           ...proseRules(SCOPES.replies, chat.replies, chat.replies.font, config),
+          ...thinkingRules(chat.replies, chat.replies.font, chat.rhythm),
           ...proseRules(SCOPES.messages, chat.messages, messagesFont, config),
           ...(chat.messages.composer ? composerRules(chat.messages, messagesFont, chat.rhythm) : []),
         ]

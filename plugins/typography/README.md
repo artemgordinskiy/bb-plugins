@@ -1,9 +1,10 @@
-# Typography
+# Better Typography
 
 Fonts and sizes for bb, in three areas:
 
-- **Chat** — book-like reading typography for assistant replies and your own
-  messages. The message box uses your messages' type by default.
+- **Chat** — book-like reading typography for assistant replies, the
+  assistant's thinking, and your own messages. The message box uses your
+  messages' type by default.
 - **Interface** — the font and base size of bb's own UI: sidebar, menus and
   settings.
 - **Code** — one monospace font for code blocks, file views, diffs and the
@@ -18,7 +19,7 @@ gaps are wider. Colors follow the theme until you pick your own.
 
 ## Settings
 
-Settings → Plugins → Typography. Changes apply to the whole app at once, with
+Settings → Plugins → Better Typography. Changes apply to the whole app at once, with
 a live preview for each area. Each area has its own **Reset**, and the top
 switch turns every rule off without losing settings.
 
@@ -73,8 +74,8 @@ Device fonts such as Bookerly are never uploaded or bundled.
 ## The Fonts plugin
 
 This plugin covers what the Fonts plugin does (interface and code fonts), so
-uninstall Fonts once Typography is set up. While both are installed, Fonts'
-`!important` rules win for any area Fonts sets. Typography's settings page
+uninstall Fonts once Better Typography is set up. While both are installed, Fonts'
+`!important` rules win for any area Fonts sets. Better Typography's settings page
 says so when it detects this.
 
 ## How it works
@@ -110,8 +111,13 @@ bundled fonts, and rules generated from the saved config
     `[data-promptbox-editor-content]`. It takes your messages' font, size,
     line height, weight and letter spacing, but not their color, paragraph
     spacing or wrapping, so earlier lines do not reflow while you type.
+  - The assistant's thinking (an expanded **Thought** row) is plain text
+    outside the markdown root, with no data attribute of its own. The plugin
+    finds it by its utility classes inside `[data-timeline-items]` and sets
+    it in the replies' font, size, line height, weight and letter spacing,
+    keeping bb's muted color.
 
-These selectors and tokens match bb 0.46. If a bb update changes them, the
+These selectors and tokens match bb 0.46, and the thinking selector bb 0.49. If a bb update changes them, the
 affected rules stop matching and bb's own styling shows; nothing breaks.
 
 ## Develop

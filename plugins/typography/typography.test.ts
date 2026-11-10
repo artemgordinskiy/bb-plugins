@@ -128,6 +128,18 @@ test("the message box takes your messages' type unless switched off", () => {
   assert.ok(!off.includes("promptbox"));
 });
 
+test("the assistant's thinking reads in the replies' type and keeps bb's color", () => {
+  const lines = buildStylesheet(
+    withChat({ replies: { ...DEFAULT_CONFIG.chat.replies, color: { light: "#2b2b2b", dark: "#e0dcd2" } } }),
+  ).split("\n");
+  const thinking = lines.find((line) => line.startsWith(`${SCOPES.thinking}{`)) ?? "";
+  assert.match(thinking, /font-family:"Literata", Georgia/);
+  assert.match(thinking, /font-size:17px;line-height:1\.65;font-weight:400/);
+  assert.ok(lines.includes(`html.dark ${SCOPES.thinking}{font-weight:380}`));
+  assert.ok(!lines.some((line) => line.includes(SCOPES.thinking) && /color|--foreground/.test(line)));
+  assert.ok(!buildStylesheet(withChat({ enabled: false })).includes("data-timeline-items"));
+});
+
 test("colors apply per appearance", () => {
   const css = buildStylesheet(
     withChat({ replies: { ...DEFAULT_CONFIG.chat.replies, color: { light: "#2b2b2b", dark: null } } }),

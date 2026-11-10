@@ -1,4 +1,4 @@
-Typography sets the fonts and sizes bb uses, in three places. Chat messages get a reading setup, so long replies read like a well-set page. bb's interface can take a different font and a larger or smaller base size. One code font covers code blocks, file views, diffs and the terminal.
+Better Typography sets the fonts and sizes bb uses, in three places. Chat messages get a reading setup, so long replies read like a well-set page. bb's interface can take a different font and a larger or smaller base size. One code font covers code blocks, file views, diffs and the terminal.
 
 The defaults change only what helps reading. The interface keeps your theme's face and scale, and code moves to JetBrains Mono. Chat starts from a book-like setup: Literata at 17px with generous line spacing, your own messages a size smaller with the message box set to match, wider paragraph gaps, and a slightly lighter weight in dark mode, where light text reads heavier.
 

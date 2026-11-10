@@ -1,7 +1,7 @@
 {
   "name": "bb-plugin-typography",
-  "version": "0.1.2",
-  "description": "Typography for bb: chat reading text, the interface and code fonts, with bundled and device fonts.",
+  "version": "0.1.3",
+  "description": "Better Typography for bb: chat reading text, the interface and code fonts, with bundled and device fonts.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -9,8 +9,8 @@
     "bbPluginSdk": ">=0.6.49"
   },
   "bb": {
-    "name": "Typography",
-    "description": "Fonts and sizes for bb: a book-like reading setup for chat messages, the interface font and size, and one code font for code blocks, diffs and the terminal. Bundled open fonts or any font on your device.",
+    "name": "Better Typography",
+    "description": "Fonts and sizes for bb: a book-like reading setup for chat messages and the assistant's thinking, the interface font and size, and one code font for code blocks, diffs and the terminal. Bundled open fonts or any font on your device.",
     "branding": {
       "icon": "./assets/icon.svg"
     },

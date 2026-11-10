@@ -1,14 +1,15 @@
 ---
 name: typography
-description: Explain or troubleshoot the Typography plugin, which sets bb's chat reading typography, interface font and size, and the code and terminal fonts, with bundled or device fonts.
+description: Explain or troubleshoot the Better Typography plugin (id `typography`), which sets bb's chat reading typography, interface font and size, and the code and terminal fonts, with bundled or device fonts.
 ---
 
-# Typography
+# Better Typography
 
 Sets fonts and sizes in three areas:
 
 - **Chat**: the markdown text of assistant replies and the user's own
-  messages, and by default the message box (composer), which takes the
+  messages, the assistant's expanded thinking (in the replies' type, keeping
+  bb's muted color), and by default the message box (composer), which takes the
   user's message type.
 - **Interface**: bb's UI font and base text size.
 - **Code**: the monospace font for code blocks, file views, diffs and the
@@ -16,7 +17,7 @@ Sets fonts and sizes in three areas:
 
 ## Configure
 
-Settings → Plugins → Typography, with a live preview per area. There is no CLI
+Settings → Plugins → Better Typography, with a live preview per area. There is no CLI
 and no server-side setting. The config lives in the viewing browser's
 localStorage under `bb-plugin-typography:config:v1`, so each device (and each
 bb server origin) has its own. An agent cannot change it for the user; point
@@ -30,7 +31,7 @@ them to the settings page.
   all of bb's `--text-*` tokens; spacing is unchanged.
 - **Code** has a code font (default JetBrains Mono), a terminal font (default:
   bb's Nerd Font stack; or "same as code font"), and ligatures (default off).
-- The top **Typography** switch turns every rule off without losing settings.
+- The top **Better Typography** switch turns every rule off without losing settings.
 
 ## Fonts
 

@@ -8,6 +8,9 @@ import type { TextToken, ThemeTokens } from "../typography";
 
 const USER_SAMPLE = "Can long replies read more like a **book** than a terminal? Something easy on the eyes at night.";
 
+const THINKING_SAMPLE =
+  "The reader wants something closer to a printed page. A serif built for screens, a size above the interface and looser line spacing should do it.";
+
 const REPLY_SAMPLE = `## Reading, not scanning
 
 Good typography disappears. A comfortable size, open line spacing and a line of roughly seventy characters let the eye return to the start of each line without hunting for it.
@@ -56,6 +59,15 @@ export function ChatPreview({ enabled }: { enabled: boolean }) {
             className="max-w-[85%] rounded-xl border border-border-seam bg-surface-recessed px-4 py-2.5"
           >
             <Markdown content={USER_SAMPLE} />
+          </div>
+        </div>
+        <div className="space-y-1.5 px-2">
+          <div className="text-xs text-muted-foreground">Thought</div>
+          <div
+            data-typography-sample="thinking"
+            className="ms-1.5 whitespace-pre-wrap break-words border-l border-border-seam pl-3 text-sm leading-relaxed text-muted-foreground"
+          >
+            {THINKING_SAMPLE}
           </div>
         </div>
         <div data-typography-sample="replies" className="px-2">

@@ -192,7 +192,7 @@ function ChatSection({
     <div className="space-y-6">
       <SectionHeader
         title="Chat"
-        description="Reading typography for replies and your messages in every thread."
+        description="Reading typography for replies, the assistant's thinking and your messages in every thread."
         onReset={same(chat, defaults) ? null : () => onChange(defaults)}
       >
         <SwitchField label="On" checked={chat.enabled} onChange={(enabled) => update({ enabled })} />
@@ -512,7 +512,7 @@ export function SettingsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3">
         <div className="min-w-0 flex-1">
           <SwitchField
-            label="Typography"
+            label="Better Typography"
             description="Fonts and sizes for chat, the interface and code, on this device only."
             checked={config.enabled}
             onChange={(enabled) => update({ enabled })}
